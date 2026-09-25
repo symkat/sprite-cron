@@ -268,14 +268,19 @@ independent copied databases are never supported as active schedulers.
 
 ## Exec adapter
 
-Prefer the official Go SDK if its pinned version exposes the required session
-and cancellation controls. Keep it behind an interface so a small direct
-WebSocket adapter remains possible. Use non-TTY execution, explicit argv, bounded
+The [SDK research](sprites-go-sdk-research.md) recommends a pinned SDK behind
+our own adapter, with lifecycle fixes as an acceptance gate. Local probes found
+that context cancellation does not send termination, disconnect lifetime is not
+exposed, and shutdown has a data race. Use direct HTTP for kill-progress handling;
+retain a focused direct WebSocket adapter as the fallback if SDK fixes grow large.
+Use non-TTY execution, explicit argv, bounded
 stdout/stderr capture, and an observed exit code. Shell syntax requires an
 explicit shell invocation; never interpolate user values into a shell command.
 
 Set an explicit disconnect survival window (proposed 60 seconds) and try
-reattachment within it. Persist the overall deadline. A timeout/cancellation
+reattachment within it. This requires an SDK addition or direct exec handling;
+the inspected SDK cannot configure it through a command option. Persist the
+overall deadline. A timeout/cancellation
 requests remote termination using the recorded session ID, follows progress,
 and escalates when supported. If termination cannot be established, retain
 unknown remote liveness and the overlap block. Do not equate a closed socket,
@@ -551,8 +556,11 @@ record observed behavior and versions:
 - Exercise cold HTTP startup, app authentication headers, response loss, timeout,
   redirect rejection, 202, and a handler implementing durable idempotency.
 
-Deliver a compatibility note and the selected adapter approach. These are not
-live-tested claims in this document. Do not build reliability promises on
+The [source review and local probes](sprites-go-sdk-research.md) provide the
+initial compatibility note and adapter recommendation. Complete the remaining
+live checks and lifecycle fixes before finalizing the implementation choice.
+These are not live-tested claims in this document. Do not build reliability
+promises on
 unverified SDK behavior or undocumented API limits.
 
 ### 2. Durable scheduling core
