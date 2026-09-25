@@ -8,3 +8,6 @@ the planning phase; the service has not been implemented.
 
 The [Go SDK research](docs/sprites-go-sdk-research.md) compares SDK and direct API
 access, with source findings and reproducible local protocol probes.
+
+[Live validation](docs/live-sprite-validation.md) records subsequent tests against
+a real Sprite, including recovery limits and sanitized result evidence.

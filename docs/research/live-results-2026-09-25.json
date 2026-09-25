@@ -1,0 +1,1127 @@
+{
+  "date": "2026-09-25",
+  "target": "test-sprite-cron",
+  "server_version": "0.0.2-beta.3",
+  "sdk_main": "d5d8f95cf4a35be923bda318f4fcbd40c1a9c439",
+  "sdk_tag": "v0.2.1 (3ff87fc9eb917d6d47e2ca9ef832cfbbe7a217e9)",
+  "notes": [
+    "baseline-tag uses v0.2.1; other SDK observations use the pinned main revision.",
+    "HTTP service was temporary; idempotency was implemented by the probe handler, not provided by the Sprite platform.",
+    "Control cancellation marker was removed before its retained run.",
+    "Observed durations are sample points, not guaranteed deadlines."
+  ],
+  "phases": {
+    "baseline": [
+      {
+        "result": "direct",
+        "test": "connection-mode"
+      },
+      {
+        "result": {
+          "control_enabled": false,
+          "error": "",
+          "exit": 0,
+          "stderr": "",
+          "stdout": "hello world|literal;$()"
+        },
+        "test": "argv"
+      },
+      {
+        "result": "direct",
+        "test": "connection-mode"
+      },
+      {
+        "result": {
+          "control_enabled": false,
+          "error": "",
+          "exit": 0,
+          "stderr": "",
+          "stdout": "/tmp\n"
+        },
+        "test": "cwd"
+      },
+      {
+        "result": "direct",
+        "test": "connection-mode"
+      },
+      {
+        "result": {
+          "control_enabled": false,
+          "error": "exit status 7",
+          "exit": 7,
+          "stderr": "stderr",
+          "stdout": "stdout"
+        },
+        "test": "output-exit"
+      },
+      {
+        "result": "direct",
+        "test": "connection-mode"
+      },
+      {
+        "result": {
+          "control_enabled": false,
+          "error": "",
+          "exit": 0,
+          "stderr": "",
+          "stdout": "PATH_present=yes HOME_present=yes"
+        },
+        "test": "env-default"
+      },
+      {
+        "result": "direct",
+        "test": "connection-mode"
+      },
+      {
+        "result": {
+          "control_enabled": false,
+          "error": "",
+          "exit": 0,
+          "stderr": "",
+          "stdout": "PATH_present=yes HOME_present=yes MARKER=present"
+        },
+        "test": "env-explicit"
+      },
+      {
+        "result": "direct",
+        "test": "connection-mode"
+      },
+      {
+        "result": {
+          "control_enabled": false,
+          "error": "",
+          "exit": 0,
+          "stderr": "",
+          "stdout": "/.sprite/bin/python3\n"
+        },
+        "test": "python"
+      },
+      {
+        "result": "control",
+        "test": "connection-mode"
+      },
+      {
+        "result": {
+          "control_enabled": true,
+          "error": "",
+          "exit": 0,
+          "stderr": "",
+          "stdout": "hello world|literal;$()"
+        },
+        "test": "argv"
+      },
+      {
+        "result": "control",
+        "test": "connection-mode"
+      },
+      {
+        "result": {
+          "control_enabled": true,
+          "error": "",
+          "exit": 0,
+          "stderr": "",
+          "stdout": "/tmp\n"
+        },
+        "test": "cwd"
+      },
+      {
+        "result": "control",
+        "test": "connection-mode"
+      },
+      {
+        "result": {
+          "control_enabled": true,
+          "error": "exit status 7",
+          "exit": 7,
+          "stderr": "stderr",
+          "stdout": "stdout"
+        },
+        "test": "output-exit"
+      },
+      {
+        "result": "control",
+        "test": "connection-mode"
+      },
+      {
+        "result": {
+          "control_enabled": true,
+          "error": "",
+          "exit": 0,
+          "stderr": "",
+          "stdout": "PATH_present=yes HOME_present=yes"
+        },
+        "test": "env-default"
+      },
+      {
+        "result": "control",
+        "test": "connection-mode"
+      },
+      {
+        "result": {
+          "control_enabled": true,
+          "error": "",
+          "exit": 0,
+          "stderr": "",
+          "stdout": "PATH_present=yes HOME_present=yes MARKER=present"
+        },
+        "test": "env-explicit"
+      },
+      {
+        "result": "control",
+        "test": "connection-mode"
+      },
+      {
+        "result": {
+          "control_enabled": true,
+          "error": "",
+          "exit": 0,
+          "stderr": "",
+          "stdout": "/.sprite/bin/python3\n"
+        },
+        "test": "python"
+      },
+      {
+        "result": {
+          "body": "\u0002post-stderr\u0001post-stdout\u0003\u0007",
+          "content_type": "application/octet-stream",
+          "error": "",
+          "status": 200
+        },
+        "test": "post-exec"
+      },
+      {
+        "result": {
+          "count": 0,
+          "error": ""
+        },
+        "test": "sdk-list"
+      }
+    ],
+    "baseline-tag": [
+      {
+        "result": "direct",
+        "test": "connection-mode"
+      },
+      {
+        "result": {
+          "control_enabled": false,
+          "error": "",
+          "exit": 0,
+          "stderr": "",
+          "stdout": "hello world|literal;$()"
+        },
+        "test": "argv"
+      },
+      {
+        "result": "direct",
+        "test": "connection-mode"
+      },
+      {
+        "result": {
+          "control_enabled": false,
+          "error": "",
+          "exit": 0,
+          "stderr": "",
+          "stdout": "/tmp\n"
+        },
+        "test": "cwd"
+      },
+      {
+        "result": "direct",
+        "test": "connection-mode"
+      },
+      {
+        "result": {
+          "control_enabled": false,
+          "error": "exit status 7",
+          "exit": 7,
+          "stderr": "stderr",
+          "stdout": "stdout"
+        },
+        "test": "output-exit"
+      },
+      {
+        "result": "direct",
+        "test": "connection-mode"
+      },
+      {
+        "result": {
+          "control_enabled": false,
+          "error": "",
+          "exit": 0,
+          "stderr": "",
+          "stdout": "PATH_present=yes HOME_present=yes"
+        },
+        "test": "env-default"
+      },
+      {
+        "result": "direct",
+        "test": "connection-mode"
+      },
+      {
+        "result": {
+          "control_enabled": false,
+          "error": "",
+          "exit": 0,
+          "stderr": "",
+          "stdout": "PATH_present=yes HOME_present=yes MARKER=present"
+        },
+        "test": "env-explicit"
+      },
+      {
+        "result": "direct",
+        "test": "connection-mode"
+      },
+      {
+        "result": {
+          "control_enabled": false,
+          "error": "",
+          "exit": 0,
+          "stderr": "",
+          "stdout": "/.sprite/bin/python3\n"
+        },
+        "test": "python"
+      },
+      {
+        "result": "control",
+        "test": "connection-mode"
+      },
+      {
+        "result": {
+          "control_enabled": true,
+          "error": "",
+          "exit": 0,
+          "stderr": "",
+          "stdout": "hello world|literal;$()"
+        },
+        "test": "argv"
+      },
+      {
+        "result": "control",
+        "test": "connection-mode"
+      },
+      {
+        "result": {
+          "control_enabled": true,
+          "error": "",
+          "exit": 0,
+          "stderr": "",
+          "stdout": "/tmp\n"
+        },
+        "test": "cwd"
+      },
+      {
+        "result": "control",
+        "test": "connection-mode"
+      },
+      {
+        "result": {
+          "control_enabled": true,
+          "error": "exit status 7",
+          "exit": 7,
+          "stderr": "stderr",
+          "stdout": "stdout"
+        },
+        "test": "output-exit"
+      },
+      {
+        "result": "control",
+        "test": "connection-mode"
+      },
+      {
+        "result": {
+          "control_enabled": true,
+          "error": "",
+          "exit": 0,
+          "stderr": "",
+          "stdout": "PATH_present=yes HOME_present=yes"
+        },
+        "test": "env-default"
+      },
+      {
+        "result": "control",
+        "test": "connection-mode"
+      },
+      {
+        "result": {
+          "control_enabled": true,
+          "error": "",
+          "exit": 0,
+          "stderr": "",
+          "stdout": "PATH_present=yes HOME_present=yes MARKER=present"
+        },
+        "test": "env-explicit"
+      },
+      {
+        "result": "control",
+        "test": "connection-mode"
+      },
+      {
+        "result": {
+          "control_enabled": true,
+          "error": "",
+          "exit": 0,
+          "stderr": "",
+          "stdout": "/.sprite/bin/python3\n"
+        },
+        "test": "python"
+      },
+      {
+        "result": {
+          "body": "\u0002post-stderr\u0001post-stdout\u0003\u0007",
+          "content_type": "application/octet-stream",
+          "error": "",
+          "status": 200
+        },
+        "test": "post-exec"
+      },
+      {
+        "result": {
+          "count": 0,
+          "error": ""
+        },
+        "test": "sdk-list"
+      }
+    ],
+    "cancel": [
+      {
+        "result": {
+          "context_cancelled": true,
+          "error": "context canceled",
+          "session": "46"
+        },
+        "test": "context-cancel"
+      },
+      {
+        "result": {
+          "body": "\u0001continued\u0003\u0000",
+          "error": "",
+          "status": 200
+        },
+        "test": "after-cancel-marker"
+      },
+      {
+        "result": {
+          "parse_error": "",
+          "selected": [
+            {
+              "id": "46",
+              "is_active": true,
+              "tty": false
+            }
+          ],
+          "status": 200
+        },
+        "test": "sessions"
+      },
+      {
+        "result": {
+          "body": "{\"type\":\"signal\",\"message\":\"Signaling terminated to process group 460 (PID 460)\",\"signal\":\"SIGTERM\",\"pid\":46}\n{\"type\":\"exited\",\"message\":\"Process exited\"}\n{\"type\":\"complete\",\"exit_code\":15}\n",
+          "error": "",
+          "status": 200
+        },
+        "test": "kill-progress"
+      },
+      {
+        "result": {
+          "body": "session already exited\n",
+          "error": "",
+          "id": "46",
+          "status": 410
+        },
+        "test": "cleanup-session"
+      }
+    ],
+    "cancel-control": [
+      {
+        "result": "control",
+        "test": "connection-mode"
+      },
+      {
+        "result": "control",
+        "test": "connection-mode"
+      },
+      {
+        "result": {
+          "context_cancelled": true,
+          "error": "context canceled",
+          "mode": "control",
+          "session": "183"
+        },
+        "test": "context-cancel"
+      },
+      {
+        "result": {
+          "body": "\u0001continued\u0003\u0000",
+          "error": "",
+          "status": 200
+        },
+        "test": "after-cancel-marker"
+      },
+      {
+        "result": {
+          "parse_error": "",
+          "selected": [
+            {
+              "id": "183",
+              "is_active": true,
+              "tty": false
+            }
+          ],
+          "status": 200
+        },
+        "test": "sessions"
+      },
+      {
+        "result": {
+          "body": "{\"type\":\"signal\",\"message\":\"Signaling terminated to process group 681 (PID 681)\",\"signal\":\"SIGTERM\",\"pid\":183}\n{\"type\":\"exited\",\"message\":\"Process exited\"}\n{\"type\":\"complete\",\"exit_code\":15}\n",
+          "error": "",
+          "status": 200
+        },
+        "test": "kill-progress"
+      },
+      {
+        "result": {
+          "body": "session already exited\n",
+          "error": "",
+          "id": "183",
+          "status": 410
+        },
+        "test": "cleanup-session"
+      }
+    ],
+    "lifetimes": [
+      {
+        "result": {
+          "lifetime": "default",
+          "session": "53"
+        },
+        "test": "detached"
+      },
+      {
+        "result": {
+          "lifetime": "1s",
+          "session": "56"
+        },
+        "test": "detached"
+      },
+      {
+        "result": {
+          "lifetime": "60s",
+          "session": "59"
+        },
+        "test": "detached"
+      },
+      {
+        "result": "3 seconds after disconnect",
+        "test": "lifetime-elapsed"
+      },
+      {
+        "result": {
+          "parse_error": "",
+          "selected": [
+            {
+              "id": "53",
+              "is_active": true,
+              "tty": false
+            },
+            {
+              "id": "56",
+              "is_active": true,
+              "tty": false
+            },
+            {
+              "id": "59",
+              "is_active": true,
+              "tty": false
+            }
+          ],
+          "status": 200
+        },
+        "test": "sessions"
+      },
+      {
+        "result": "13 seconds after disconnect",
+        "test": "lifetime-elapsed"
+      },
+      {
+        "result": {
+          "parse_error": "",
+          "selected": [
+            {
+              "id": "59",
+              "is_active": true,
+              "tty": false
+            },
+            {
+              "id": "53",
+              "is_active": true,
+              "tty": false
+            }
+          ],
+          "status": 200
+        },
+        "test": "sessions"
+      },
+      {
+        "result": {
+          "lifetime": "default",
+          "result": {
+            "exit": 9,
+            "stderr": "",
+            "stdout": "beginningfinished"
+          }
+        },
+        "test": "lifetime-attach"
+      },
+      {
+        "result": {
+          "error": "websocket dial status=404: websocket: bad handshake",
+          "lifetime": "1s"
+        },
+        "test": "lifetime-attach"
+      },
+      {
+        "result": {
+          "lifetime": "60s",
+          "result": {
+            "exit": 9,
+            "stderr": "",
+            "stdout": "beginningfinished"
+          }
+        },
+        "test": "lifetime-attach"
+      },
+      {
+        "result": {
+          "body": "session already exited\n",
+          "error": "",
+          "id": "59",
+          "status": 410
+        },
+        "test": "cleanup-session"
+      },
+      {
+        "result": {
+          "body": "session not found: 56\n",
+          "error": "",
+          "id": "56",
+          "status": 404
+        },
+        "test": "cleanup-session"
+      },
+      {
+        "result": {
+          "body": "session already exited\n",
+          "error": "",
+          "id": "53",
+          "status": 410
+        },
+        "test": "cleanup-session"
+      }
+    ],
+    "lifetimes-measured": [
+      {
+        "result": {
+          "elapsed": 0.080992356,
+          "lifetime": "default",
+          "session": "113"
+        },
+        "test": "measured-detach"
+      },
+      {
+        "result": {
+          "elapsed": 0.130987072,
+          "lifetime": "1s",
+          "session": "116"
+        },
+        "test": "measured-detach"
+      },
+      {
+        "result": {
+          "elapsed": 0.192364998,
+          "lifetime": "60s",
+          "session": "119"
+        },
+        "test": "measured-detach"
+      },
+      {
+        "result": 3.000858119,
+        "test": "measured-time"
+      },
+      {
+        "result": {
+          "parse_error": "",
+          "selected": [
+            {
+              "id": "113",
+              "is_active": true,
+              "tty": false
+            },
+            {
+              "id": "116",
+              "is_active": true,
+              "tty": false
+            },
+            {
+              "id": "119",
+              "is_active": true,
+              "tty": false
+            }
+          ],
+          "status": 200
+        },
+        "test": "sessions"
+      },
+      {
+        "result": {
+          "body": "\u0001default=\n1s=\n\u000160s=\n\u0003\u0000",
+          "elapsed": 3.064631465,
+          "error": "",
+          "status": 200
+        },
+        "test": "measured-markers"
+      },
+      {
+        "result": 12.003945185,
+        "test": "measured-time"
+      },
+      {
+        "result": {
+          "parse_error": "",
+          "selected": [
+            {
+              "id": "113",
+              "is_active": true,
+              "tty": false
+            },
+            {
+              "id": "119",
+              "is_active": true,
+              "tty": false
+            }
+          ],
+          "status": 200
+        },
+        "test": "sessions"
+      },
+      {
+        "result": {
+          "body": "\u0001default=\u0001five\u0001\n1s=\u0001five\u0001\n60s=\u0001five\u0001\n\u0003\u0000",
+          "elapsed": 12.08267954,
+          "error": "",
+          "status": 200
+        },
+        "test": "measured-markers"
+      },
+      {
+        "result": 22.009806199,
+        "test": "measured-time"
+      },
+      {
+        "result": {
+          "parse_error": "",
+          "selected": [
+            {
+              "id": "119",
+              "is_active": true,
+              "tty": false
+            }
+          ],
+          "status": 200
+        },
+        "test": "sessions"
+      },
+      {
+        "result": {
+          "body": "\u0001default=\u0001fivefifteen\u0001\n1s=\u0001five\u0001\n60s=\u0001fivefifteen\u0001\n\u0003\u0000",
+          "elapsed": 22.077703875,
+          "error": "",
+          "status": 200
+        },
+        "test": "measured-markers"
+      },
+      {
+        "result": 33.002017595,
+        "test": "measured-time"
+      },
+      {
+        "result": {
+          "parse_error": "",
+          "selected": [
+            {
+              "id": "119",
+              "is_active": true,
+              "tty": false
+            }
+          ],
+          "status": 200
+        },
+        "test": "sessions"
+      },
+      {
+        "result": {
+          "body": "\u0001default=\u0001fivefifteen\u0001\n1s=\u0001five\u0001\n60s=\u0001fivefifteenthirty\u0001\n\u0003\u0000",
+          "elapsed": 33.064107851,
+          "error": "",
+          "status": 200
+        },
+        "test": "measured-markers"
+      },
+      {
+        "result": {
+          "body": "{\"type\":\"signal\",\"message\":\"Signaling killed to process group 576 (PID 576)\",\"signal\":\"SIGKILL\",\"pid\":119}\n{\"type\":\"exited\",\"message\":\"Process exited\"}\n{\"type\":\"complete\",\"exit_code\":137}\n",
+          "error": "",
+          "id": "119",
+          "status": 200
+        },
+        "test": "cleanup-session"
+      },
+      {
+        "result": {
+          "body": "session not found: 116\n",
+          "error": "",
+          "id": "116",
+          "status": 404
+        },
+        "test": "cleanup-session"
+      },
+      {
+        "result": {
+          "body": "session not found: 113\n",
+          "error": "",
+          "id": "113",
+          "status": 404
+        },
+        "test": "cleanup-session"
+      }
+    ],
+    "replay": [
+      {
+        "result": {
+          "error": "exit status 4",
+          "exit": 4,
+          "offset": 6,
+          "session": "97",
+          "stderr": "",
+          "stdout": "ABCDEFghiJK"
+        },
+        "test": "sdk-attach-offset"
+      },
+      {
+        "result": {
+          "error": "websocket dial status=410: websocket: bad handshake"
+        },
+        "test": "completed-attach"
+      },
+      {
+        "result": {
+          "body": "session already exited\n",
+          "error": "",
+          "id": "97",
+          "status": 410
+        },
+        "test": "cleanup-session"
+      }
+    ],
+    "raw-replay": [
+      {
+        "result": {
+          "data": "ABCDEF",
+          "stream": 1
+        },
+        "test": "initial-frame"
+      },
+      {
+        "result": {
+          "data": "ghi",
+          "stream": 2
+        },
+        "test": "initial-frame"
+      },
+      {
+        "result": {
+          "capabilities": "signal",
+          "version": ""
+        },
+        "test": "raw-attach-headers"
+      },
+      {
+        "result": {
+          "session_id": "128",
+          "tty": false,
+          "type": "session_info"
+        },
+        "test": "raw-attach-metadata"
+      },
+      {
+        "result": {
+          "data": "ABCDEFghi",
+          "stream": 1
+        },
+        "test": "raw-attach-frame"
+      },
+      {
+        "result": {
+          "data": "JK",
+          "stream": 1
+        },
+        "test": "raw-attach-frame"
+      },
+      {
+        "result": {
+          "data": "\u0004",
+          "stream": 3
+        },
+        "test": "raw-attach-frame"
+      },
+      {
+        "result": {
+          "body": "session already exited\n",
+          "error": "",
+          "id": "128",
+          "status": 410
+        },
+        "test": "cleanup-session"
+      }
+    ],
+    "tree": [
+      {
+        "result": {
+          "body": "{\"type\":\"signal\",\"message\":\"Signaling terminated to process group 802 (PID 802)\",\"signal\":\"SIGTERM\",\"pid\":243}\n{\"type\":\"exited\",\"message\":\"Process exited\"}\n{\"type\":\"complete\",\"exit_code\":15}\n",
+          "error": "",
+          "pids": {
+            "child": 245,
+            "parent": 244
+          },
+          "session": "243",
+          "status": 200
+        },
+        "test": "tree-kill"
+      },
+      {
+        "result": {
+          "body": "\u0001{\"244\": \"absent\", \"245\": \"absent\"}\n\u0003\u0000",
+          "error": "",
+          "status": 200
+        },
+        "test": "tree-after-kill"
+      },
+      {
+        "result": {
+          "body": "session already exited\n",
+          "error": "",
+          "id": "243",
+          "status": 410
+        },
+        "test": "cleanup-session"
+      }
+    ],
+    "writer": [
+      {
+        "result": {
+          "exit": 0,
+          "run_error": "",
+          "writes": 1
+        },
+        "test": "live-writer-error"
+      }
+    ],
+    "env": [
+      {
+        "result": "direct",
+        "test": "connection-mode"
+      },
+      {
+        "result": {
+          "control": false,
+          "error": "",
+          "exit": 0,
+          "explicit_env": false,
+          "stderr": "",
+          "stdout": "{\"PATH_present\": true, \"HOME_present\": true, \"marker\": \"\"}\n"
+        },
+        "test": "python-env"
+      },
+      {
+        "result": "direct",
+        "test": "connection-mode"
+      },
+      {
+        "result": {
+          "control": false,
+          "error": "",
+          "exit": 0,
+          "explicit_env": true,
+          "stderr": "",
+          "stdout": "{\"PATH_present\": true, \"HOME_present\": true, \"marker\": \"present\"}\n"
+        },
+        "test": "python-env"
+      },
+      {
+        "result": "control",
+        "test": "connection-mode"
+      },
+      {
+        "result": {
+          "control": true,
+          "error": "",
+          "exit": 0,
+          "explicit_env": false,
+          "stderr": "",
+          "stdout": "{\"PATH_present\": true, \"HOME_present\": true, \"marker\": \"\"}\n"
+        },
+        "test": "python-env"
+      },
+      {
+        "result": "control",
+        "test": "connection-mode"
+      },
+      {
+        "result": {
+          "control": true,
+          "error": "",
+          "exit": 0,
+          "explicit_env": true,
+          "stderr": "",
+          "stdout": "{\"PATH_present\": true, \"HOME_present\": true, \"marker\": \"present\"}\n"
+        },
+        "test": "python-env"
+      }
+    ],
+    "http": [
+      {
+        "test": "http-authenticated",
+        "result": {
+          "status": 200,
+          "body": "{\"ready\": true}",
+          "seconds": 0.103
+        }
+      },
+      {
+        "test": "http-without-token",
+        "result": {
+          "status": 302,
+          "seconds": 0.041
+        }
+      },
+      {
+        "test": "http-without-app-auth",
+        "result": {
+          "status": 403,
+          "seconds": 0.049
+        }
+      },
+      {
+        "test": "http-first",
+        "result": {
+          "status": 200,
+          "body": "{\"effect_number\": 1, \"duplicate\": false, \"authorization_present\": false, \"app_auth_present\": true}",
+          "seconds": 0.056
+        }
+      },
+      {
+        "test": "http-repeat",
+        "result": {
+          "status": 200,
+          "body": "{\"effect_number\": 1, \"duplicate\": true, \"authorization_present\": false, \"app_auth_present\": true}",
+          "seconds": 0.038
+        }
+      },
+      {
+        "test": "http-slow-response-lost",
+        "result": {
+          "timeout": true,
+          "seconds": 0.311
+        }
+      },
+      {
+        "test": "http-retry-after-lost-response",
+        "result": {
+          "status": 200,
+          "body": "{\"effect_number\": 2, \"duplicate\": true, \"authorization_present\": false, \"app_auth_present\": true}",
+          "seconds": 0.042
+        }
+      },
+      {
+        "test": "http-accepted",
+        "result": {
+          "status": 202,
+          "body": "{\"accepted\": true}",
+          "seconds": 0.049
+        }
+      },
+      {
+        "test": "http-redirect",
+        "result": {
+          "status": 302,
+          "seconds": 0.035
+        }
+      },
+      {
+        "test": "stop-service",
+        "result": "b'\\x01{\"type\":\"stopping\",\"timestamp\":1790307896060}\\n{\"type\":\"stopped\",\"exit_code\":143,\"timestamp\":1790307896262}\\n{\"type\":\"complete\",\"log_files\":{\"combined\":\"/.sprite/logs/services/sprite-cron-live-probe.log\",\"stderr\":\"/.sprite/logs/services/sprite-cron-live-probe.log\",\"stdout\":\"/.sprite/logs/services/sprite-cron-live-probe.log\"},\"timestamp\":1790307896362}\\n\\x03\\x00'"
+      },
+      {
+        "test": "http-service-autostart",
+        "result": {
+          "status": 502,
+          "seconds": 0.061
+        }
+      },
+      {
+        "test": "http-repeat-after-service-restart",
+        "result": {
+          "timeout": true,
+          "seconds": 15.025
+        }
+      }
+    ],
+    "http-after-restart": [
+      {
+        "test": "http-after-explicit-restart",
+        "result": {
+          "status": 200,
+          "body": "{\"ready\": true}",
+          "seconds": 0.043
+        }
+      },
+      {
+        "test": "http-dedup-after-explicit-restart",
+        "result": {
+          "status": 200,
+          "body": "{\"effect_number\": 1, \"duplicate\": true, \"authorization_present\": false, \"app_auth_present\": true}",
+          "seconds": 0.038
+        }
+      }
+    ],
+    "cleanup": [
+      {
+        "test": "delete-test-service",
+        "result": "b'\\x03\\x00'"
+      },
+      {
+        "test": "remove-test-files",
+        "result": "b'\\x03\\x00'"
+      },
+      {
+        "test": "remove-test-service-log",
+        "result": "b\"\\x02rm: cannot remove '/.sprite/logs/services/sprite-cron-live-probe.log'\\x02: Read-only file system\\n\\x03\\x01\""
+      },
+      {
+        "test": "final/services",
+        "result": []
+      },
+      {
+        "test": "final/exec",
+        "result": {
+          "sessions": []
+        }
+      },
+      {
+        "test": "remote-directory-absent",
+        "result": "b'\\x01removed\\x03\\x00'"
+      }
+    ]
+  }
+}

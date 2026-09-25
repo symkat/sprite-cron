@@ -3,6 +3,12 @@
 Research date: September 25, 2026. This is source review and local protocol testing,
 not a live-platform certification. See the [system design](design.md).
 
+Follow-up: [live validation](live-sprite-validation.md) tested the authorized
+Sprite on `0.0.2-beta.3`. It confirms cancellation and output-capture gaps,
+shows that the live session-list shape matches the SDK, and identifies replay
+and completed-session recovery limits. The local findings below remain the
+record of the original source/protocol review.
+
 ## Recommendation
 
 **Prefer the Go SDK as the foundation for exec, behind our own adapter, provided
@@ -297,7 +303,8 @@ Seven research test functions, with two session-shape subtests, passed normally
 on both snapshots. Passing here means the observed behavior was reproduced,
 including the limitations; it does not mean those limitations are acceptable.
 The current-main upstream suite passed before adding the probes. The v0.2.1
-suite plus probes passed normally. Live lifecycle tests were not exercised.
+suite plus probes passed normally. Live lifecycle tests were not exercised in
+this initial stage; see the subsequent [live report](live-sprite-validation.md).
 
 The current-main research suite failed with `-race` on connection shutdown; an
 isolated 20-run missing-exit reproduction failed on both current main and v0.2.1.

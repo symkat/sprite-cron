@@ -23,7 +23,9 @@ effects require cooperation from the job; a scheduler alone cannot guarantee the
 ## What the research establishes
 
 These are documented platform capabilities. Choices in later sections are our
-proposals, and the research spikes below must verify uncertain behavior.
+proposals. The [live validation report](live-sprite-validation.md) records
+observations on Sprite `0.0.2-beta.3`, including differences from the reference.
+Remaining research spikes must verify behavior on the versions we deploy.
 
 | Finding | Design implication | Source |
 | --- | --- | --- |
@@ -107,12 +109,15 @@ Separate the Sprite, its authentication, and the job:
 A credential can serve many targets; one target can reference different exec and
 HTTP credentials. An HTTP job may additionally need an application secret, such
 as `X-Job-Token`, distinct from Sprite edge authentication. Do not assume two
-independent bearer tokens can occupy the same Authorization header. Confirm edge
-header forwarding before selecting an application authentication contract.
+independent bearer tokens can occupy the same Authorization header. The live
+test observed the custom application header arriving while
+the Sprite bearer Authorization header was absent; use a separate application
+header and retest that forwarding contract on the deployed version.
 
 The management/exec token is needed to validate and discover the target. For
-HTTP, default to that token unless the user explicitly selects another. Make
-public HTTP mode explicit, send no Sprite token in that mode, and still require
+HTTP, default to that token unless the user explicitly selects another. The
+supplied test token successfully authenticated both transports in live testing.
+Make public HTTP mode explicit, send no Sprite token in that mode, and still require
 application authentication for a mutating job endpoint.
 
 Treat the metadata URL as authoritative; never construct it from the Sprite
@@ -273,25 +278,35 @@ our own adapter, with lifecycle fixes as an acceptance gate. Local probes found
 that context cancellation does not send termination, disconnect lifetime is not
 exposed, and shutdown has a data race. Use direct HTTP for kill-progress handling;
 retain a focused direct WebSocket adapter as the fallback if SDK fixes grow large.
-Use non-TTY execution, explicit argv, bounded
-stdout/stderr capture, and an observed exit code. Shell syntax requires an
+Use non-TTY execution, explicit argv, bounded stdout/stderr capture, and an observed exit code. Shell syntax requires an
 explicit shell invocation; never interpolate user values into a shell command.
 
-Set an explicit disconnect survival window (proposed 60 seconds) and try
-reattachment within it. This requires an SDK addition or direct exec handling;
-the inspected SDK cannot configure it through a command option. Persist the
-overall deadline. A timeout/cancellation
-requests remote termination using the recorded session ID, follows progress,
+Set an explicit disconnect survival window (proposed 60 seconds) and attempt
+reattachment promptly. Live tests confirmed the parameter affects survival, but
+its enforcement was not a precise deadline; use independent job timeouts.
+Configuring the disconnect window requires an SDK addition or direct exec
+handling; the inspected SDK has no corresponding command option. Persist the
+overall deadline. A timeout/cancellation requests remote termination using the recorded session ID, follows progress,
 and escalates when supported. If termination cannot be established, retain
 unknown remote liveness and the overlap block. Do not equate a closed socket,
 context cancellation, or HTTP 200 from a kill request with confirmed termination.
 
-Verify working-directory and environment behavior in the SDK. The WebSocket
-reference says supplied environment entries replace defaults; do not accidentally
-remove PATH/HOME when adding run metadata. Verify output replay and completed
-session retention; flag possible replayed or missing output after reconnect.
-The HTTP POST exec alternative is distinct from calling the user's HTTP server;
-its result/framing contract needs a separate spike before using it as a fallback.
+Live tests verified working directory and observed PATH/HOME remaining present
+when an extra environment variable was supplied, despite replacement wording in
+the reference. Pin and retest that behavior. Reconnection replay ignored the
+requested output offset and combined earlier stderr into stdout on the tested
+server; mark replay as potentially duplicated and stream labels as uncertain.
+A completed-session attach returned 410 after one second. Persist exits promptly;
+without durable completion evidence, preserve an unknown outcome. Stronger result
+recovery would require a cooperative runner storing run IDs and outcomes on the
+Sprite, which is additional scope.
+
+Always provide explicit bounded output writers or `io.Discard`. Live testing
+confirmed that an output writer error can be ignored by `Run`; record capture
+failure separately from remote exit. The HTTP POST exec alternative is distinct
+from calling the user's HTTP server. Live testing returned a binary stream and
+HTTP 200 even for exit 7; its full framing contract needs verification before
+using it as a fallback.
 
 ## HTTP adapter and handler contract
 
@@ -556,12 +571,12 @@ record observed behavior and versions:
 - Exercise cold HTTP startup, app authentication headers, response loss, timeout,
   redirect rejection, 202, and a handler implementing durable idempotency.
 
-The [source review and local probes](sprites-go-sdk-research.md) provide the
-initial compatibility note and adapter recommendation. Complete the remaining
-live checks and lifecycle fixes before finalizing the implementation choice.
-These are not live-tested claims in this document. Do not build reliability
-promises on
-unverified SDK behavior or undocumented API limits.
+The [source review and local probes](sprites-go-sdk-research.md) and
+[live experiments](live-sprite-validation.md) provide the initial compatibility
+record and adapter recommendation. Complete the remaining live checks and
+lifecycle fixes before finalizing the implementation choice. Treat observations
+as version-specific; do not build reliability promises on unverified behavior
+or undocumented API limits.
 
 ### 2. Durable scheduling core
 
