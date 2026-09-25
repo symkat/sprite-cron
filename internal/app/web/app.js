@@ -2,6 +2,36 @@
 let csrf = '', user = null, jobs = [], targets = [], runOffset = 0;
 const $ = s => document.querySelector(s);
 function node(tag, text, cls) { const n = document.createElement(tag); if (text !== undefined) n.textContent = text; if (cls) n.className = cls; return n; }
+function concealSecrets() {
+  document.querySelectorAll('.secret-toggle.is-visible').forEach(button => button.click());
+}
+function setupSecretToggles() {
+  document.querySelectorAll('input[type="password"]').forEach((input, index) => {
+    const label = input.closest('label'), name = label.textContent.trim();
+    input.id ||= 'secret-input-' + index;
+    label.htmlFor = input.id;
+    const field = node('div', undefined, 'secret-field'), wrap = node('div', undefined, 'secret-input');
+    label.before(field); field.append(label); wrap.append(input); field.append(wrap);
+    const button = node('button', undefined, 'secret-toggle');
+    button.type = 'button'; button.setAttribute('aria-controls', input.id);
+    const ns = 'http://www.w3.org/2000/svg', icon = document.createElementNS(ns, 'svg');
+    icon.setAttribute('viewBox', '0 0 24 24'); icon.setAttribute('aria-hidden', 'true');
+    for (const [d, cls] of [['M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z', ''], ['M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z', ''], ['M3 3l18 18', 'eye-slash']]) {
+      const path = document.createElementNS(ns, 'path'); path.setAttribute('d', d);
+      if (cls) path.setAttribute('class', cls); icon.append(path);
+    }
+    button.append(icon); wrap.append(button);
+    function visibility(visible) {
+      input.type = visible ? 'text' : 'password';
+      button.classList.toggle('is-visible', visible);
+      button.setAttribute('aria-label', (visible ? 'Hide ' : 'Show ') + name);
+      button.title = (visible ? 'Hide ' : 'Show ') + name;
+    }
+    button.addEventListener('click', () => visibility(input.type === 'password'));
+    input.form.addEventListener('reset', () => visibility(false));
+    visibility(false);
+  });
+}
 function notice(text) { $('#notice').textContent = text; $('#notice').hidden = !text; }
 function time(value) { return value ? new Date(value).toLocaleString() : '—'; }
 async function api(path, method = 'GET', data, headers = {}) {
@@ -46,7 +76,7 @@ let runRows=[], runJobID;
 async function loadRuns(jobID,more=false){if(!more){runOffset=0;runRows=[];runJobID=jobID;}jobID=runJobID;const result=await api('/runs?offset='+runOffset+(jobID?'&job_id='+encodeURIComponent(jobID):''));runOffset=result.next_offset;runRows.push(...result.runs);$('#more-runs').hidden=!result.has_more;table('#run-list',['Run / job','Scheduled','Outcome','Attempt','Actions'],runRows.map(r=>{const actions=buttons(action('Details',async()=>{const data=await api('/runs/'+r.id);$('#run-detail').hidden=false;$('#run-detail pre').textContent=JSON.stringify(data,null,2);}));if(user.role!=='reader'){if(['queued','dispatching','running','retry_wait','unknown'].includes(r.status))actions.append(action('Cancel',async()=>{await api('/runs/'+r.id+'/cancel','POST',{});await loadRuns();}));if(r.status==='unknown'&&!r.resolved)actions.append(action('Resolve',async()=>{const note=prompt('Confirm you investigated this run. Explain why releasing its overlap block is safe (remote work may still be running):');if(!note)return;await api('/runs/'+r.id+'/resolve','POST',{accept_risk:true,note});await loadRuns();}));if(['failed','timed_out','cancelled'].includes(r.status)||r.status==='unknown'&&r.resolved)actions.append(action('Retry',async()=>{if(!confirm('Retry the same run ID? The saved job must be declared safe to repeat.'))return;await api('/runs/'+r.id+'/retry','POST',{});await loadRuns();}));}return[r.id.slice(0,8)+' / '+(jobs.find(j=>j.id===r.job_id)?.name||r.job_id),time(r.scheduled_at),badge(r.status+(r.resolved?' (resolved)':'')),r.attempt,actions];}));}
 async function loadTokens(){const tokens=await api('/tokens');table('#token-list',['Name','Scopes','Targets','Expires','Last used','Actions'],tokens.map(t=>[t.name,t.scopes.join(', '),t.targets.join(', '),time(t.expires_at),time(t.last_used_at),t.revoked?'Revoked':action('Revoke',async()=>{await api('/tokens/'+t.id,'DELETE');await loadTokens();})]));}
 async function loadAudit(){const [events,status]=await Promise.all([api('/audit'),api('/status')]);$('#system-status').textContent=JSON.stringify(status,null,2);table('#audit-list',['When','Who','Action','Object','Detail'],events.map(e=>[time(e.at),e.actor,e.action,e.object,e.detail]));}
-function showTab(id){document.querySelectorAll('.tab').forEach(x=>x.hidden=x.id!==id);document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('active',b.dataset.tab===id));$('#new-token').textContent='';$('#new-token').hidden=true;}
+function showTab(id){concealSecrets();document.querySelectorAll('.tab').forEach(x=>x.hidden=x.id!==id);document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('active',b.dataset.tab===id));$('#new-token').textContent='';$('#new-token').hidden=true;}
 async function boot(){try {const me=await api('/me');user=me.user;csrf=me.csrf;}catch{$('#login').hidden=false;return;}$('#login').hidden=true;$('#workspace').hidden=false;$('#logout').hidden=false;$('#identity').textContent=user.username+' · '+user.role;document.querySelectorAll('.admin').forEach(e=>e.hidden=user.role!=='admin');document.querySelectorAll('.write').forEach(e=>e.hidden=user.role==='reader');await loadTargets();if(user.role==='admin')await loadCredentials();await loadJobs();}
 form('#login-form',async f=>{const result=await api('/login','POST',plain(f,['username','password']));csrf=result.csrf;f.reset();await boot();});
 $('#logout').addEventListener('click',()=>perform(async()=>{await api('/logout','POST',{});location.reload();}));
@@ -56,11 +86,13 @@ $('#job-type').addEventListener('change',executionFields);
 $('#preview').addEventListener('click',()=>perform(async()=>{$('#schedule-preview').textContent=(await api('/schedules/preview','POST',plain($('#job-form'),['schedule','timezone']))).join('\n');}));
 form('#job-form',async f=>{const j=plain(f,['name','target_id','schedule','timezone']);j.enabled=checked(f,'enabled');j.policy={...plain(f,['overlap','misfire']),retry_safe:checked(f,'retry_safe')};for(const k of ['timeout_seconds','start_grace_seconds','max_attempts'])j.policy[k]=Number(value(f,k));const type=value(f,'type');j.execution=type!=='http'?{type,...(type==='shell'?{script:value(f,'script'),shell:value(f,'shell')}:{argv:jsonField(f,'argv')}),directory:value(f,'directory'),env:jsonField(f,'env')}:{type,...plain(f,['method','path','body']),headers:jsonField(f,'headers'),success_statuses:jsonField(f,'success_statuses')};const id=value(f,'id');if(id)j.revision=Number(value(f,'revision'));await api('/jobs'+(id?'/'+id:''),id?'PUT':'POST',j);$('#job-editor').open=false;await loadJobs();notice('Job saved.');});
 form('#credential-form',async f=>{const data=plain(f,['id','label','kind','value']);const rotate=checked(f,'rotate');await api('/credentials'+(rotate?'/'+data.id:''),rotate?'PUT':'POST',data);f.reset();await loadCredentials();notice('Credential saved.');});
-function applicationHeaderFields(){const f=$('#target-form'),selected=!!value(f,'app_credential_id'),header=f.elements.namedItem('app_header');header.disabled=!selected;header.required=selected;f.elements.namedItem('app_credential_id').required=checked(f,'public');if(!selected)header.value='';}
+function applicationHeaderFields(){const f=$('#target-form'),selected=!!value(f,'app_credential_id'),header=f.elements.namedItem('app_header');header.required=selected;f.elements.namedItem('app_credential_id').required=checked(f,'public')||!!header.value.trim();}
+$('#target-form input[name=app_header]').addEventListener('input',applicationHeaderFields);
 $('#target-form select[name=app_credential_id]').addEventListener('change',applicationHeaderFields);
 $('#target-form input[name=public]').addEventListener('change',applicationHeaderFields);
 form('#target-form',async f=>{await api('/targets','POST',{...plain(f,['id','sprite_name','credential_id','app_credential_id','app_header']),public:checked(f,'public')});f.reset();applicationHeaderFields();await loadTargets();notice('Target verified and registered.');});
-form('#token-form',async f=>{const data={...plain(f,['name','password']),scopes:value(f,'scopes').split(',').map(x=>x.trim()),targets:value(f,'targets').split(',').map(x=>x.trim()),expires_hours:Number(value(f,'expires_hours'))};const result=await api('/tokens','POST',data);f.elements.password.value='';$('#new-token').hidden=false;$('#new-token').textContent='Copy this token now. It will not be shown again.\n\n'+result.token;await loadTokens();});
+form('#token-form',async f=>{const data={...plain(f,['name','password']),scopes:value(f,'scopes').split(',').map(x=>x.trim()),targets:value(f,'targets').split(',').map(x=>x.trim()),expires_hours:Number(value(f,'expires_hours'))};const result=await api('/tokens','POST',data);f.elements.password.value='';concealSecrets();$('#new-token').hidden=false;$('#new-token').textContent='Copy this token now. It will not be shown again.\n\n'+result.token;await loadTokens();});
 form('#password-form',async f=>{await api('/password','POST',plain(f,['current','new']));location.reload();});
 $('#refresh-runs').addEventListener('click',()=>perform(()=>loadRuns()));$('#more-runs').addEventListener('click',()=>perform(()=>loadRuns(undefined,true)));
+setupSecretToggles();
 perform(boot);
