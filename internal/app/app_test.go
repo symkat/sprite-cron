@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync/atomic"
@@ -380,9 +381,13 @@ func TestHTTPExecutionContract(t *testing.T) {
 	}
 }
 func TestExecProtocolReconnectAndCancellation(t *testing.T) {
-	for _, mode := range []string{"success", "reconnect", "missing-exit", "cancel"} {
+	for _, mode := range []string{"success", "reconnect", "missing-exit", "cancel", "shell-reconnect", "shell-cancel"} {
 		t.Run(mode, func(t *testing.T) {
 			s, v, j := fixture(t)
+			if strings.HasPrefix(mode, "shell-") {
+				j.Execution = Execution{Type: "shell", Script: "echo hello"}
+				mode = strings.TrimPrefix(mode, "shell-")
+			}
 			var starts, attaches, kills atomic.Int32
 			up := websocket.Upgrader{}
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -739,4 +744,96 @@ func TestTokenCredentialProvisioning(t *testing.T) {
 		t.Fatal("revoked token retained access", w.Code)
 	}
 	assertSecret("replacement-secret", 2)
+}
+
+func TestShellExecution(t *testing.T) {
+	for _, shell := range []string{"/bin/sh", "/bin/bash"} {
+		t.Run(shell, func(t *testing.T) {
+			s, v, j := fixture(t)
+			dir := t.TempDir()
+			if err := os.WriteFile(filepath.Join(dir, "input.txt"), []byte("foo first\nbar ignored\nfoo second\n"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			script := "echo \"Hello World \" `date +%Y` > output.txt\ngrep foo input.txt | cut -d \" \" -f 2\nprintf '%s' \"$GREETING\"\ncat output.txt"
+			if shell == "/bin/bash" {
+				script = "shopt -q login_shell || exit 40\nset -o pipefail\nvalues=(one two)\n[[ ${values[1]} == two ]] || exit 42\n" + script
+			}
+			j.Execution = Execution{Type: "shell", Shell: shell, Script: script, Directory: dir, Env: map[string]string{"GREETING": "literal $(echo should-not-expand)\n"}}
+			if err := s.SaveJob(j, false, "test"); err != nil {
+				t.Fatal(err)
+			}
+			r := queued(t, s, j)
+			if r.Snapshot.Job.Execution.Script != script {
+				t.Fatal("script snapshot changed")
+			}
+			up := websocket.Upgrader{}
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+				argv := req.URL.Query()["cmd"]
+				if len(argv) != 3 || argv[0] != shell || argv[1] != "-lc" || argv[2] != script {
+					t.Error("script must remain one unmodified argument")
+					w.WriteHeader(400)
+					return
+				}
+				c, err := up.Upgrade(w, req, nil)
+				if err != nil {
+					return
+				}
+				defer c.Close()
+				c.WriteJSON(map[string]string{"type": "session_info", "session_id": "shell-1"})
+				command := exec.Command(argv[0], argv[1:]...)
+				command.Dir = req.URL.Query().Get("dir")
+				command.Env = append(os.Environ(), req.URL.Query()["env"]...)
+				output, err := command.CombinedOutput()
+				code := 0
+				if err != nil {
+					code = 1
+				}
+				c.WriteMessage(websocket.BinaryMessage, append([]byte{1}, output...))
+				c.WriteMessage(websocket.BinaryMessage, []byte{3, byte(code)})
+			}))
+			defer server.Close()
+			e := NewExecutor(s, v)
+			e.BaseURL = server.URL
+			e.Dialer = &websocket.Dialer{}
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			result := e.executeExec(ctx, r, func(string) error { return nil })
+			expected := "first\nsecond\nliteral $(echo should-not-expand)\nHello World  " + time.Now().Format("2006") + "\n"
+			if result.Status != "succeeded" || result.Stdout != expected {
+				t.Fatalf("shell result: %+v, want %q", result, expected)
+			}
+			// Interrupted shell jobs must reattach to the existing session after restart.
+			mustExec(t, s, `UPDATE runs SET status='running',session_id='shell-1',attempt=1,deadline=? WHERE id=?`, nowMS()+10000, r.ID)
+			sch := NewScheduler(s, e, 2, 1)
+			if err := sch.Recover(); err != nil {
+				t.Fatal(err)
+			}
+			recovered, err := sch.claim(time.Now())
+			if err != nil || recovered.SessionID != "shell-1" || recovered.Attempt != 1 {
+				t.Fatal("shell recovery lost session", recovered, err)
+			}
+		})
+	}
+}
+
+func TestShellValidation(t *testing.T) {
+	base := Job{Name: "shell", TargetID: "test", Schedule: "* * * * *"}
+	base.Execution = Execution{Type: "shell", Script: "echo ok"}
+	if err := base.Validate(); err != nil || base.Execution.Shell != "/bin/bash" {
+		t.Fatal("shell default", err)
+	}
+	for _, cfg := range []Execution{
+		{Type: "shell", Script: "  \n"}, {Type: "shell", Script: "echo\x00"},
+		{Type: "shell", Script: "echo ok", Shell: "/custom/shell"},
+		{Type: "shell", Script: "echo ok", Argv: []string{"true"}},
+		{Type: "shell", Script: strings.Repeat("x", 65536)},
+		{Type: "shell", Script: "echo ok", Env: map[string]string{"SPRITE_CRON_RUN_ID": "spoofed"}},
+		{Type: "exec", Argv: []string{"true"}, Script: "echo ignored"},
+	} {
+		j := base
+		j.Execution = cfg
+		if err := j.Validate(); err == nil {
+			t.Fatalf("accepted invalid execution: type=%s shell=%s", cfg.Type, cfg.Shell)
+		}
+	}
 }

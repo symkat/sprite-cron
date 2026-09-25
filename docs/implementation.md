@@ -11,7 +11,7 @@ process, an embedded browser application, and a JSON HTTP API. Accounts are
 provisioned through the local CLI. Browser passwords, server-side sessions, and
 opaque scoped API tokens operate without an external identity provider.
 
-Jobs support five-field cron, IANA time zones, manual execution, exec and HTTP
+Jobs support five-field cron, IANA time zones, manual execution, exec, shell, and HTTP
 modes, immutable run snapshots, deadlines, overlap prevention, summarized
 misfires, and explicit retry safety. Credentials use a versioned AES-GCM keyring
 separate from the database. The same application enforces permissions for both
@@ -21,6 +21,10 @@ The repository includes a container definition, Fly configuration for a single
 Machine and volume, CI checks, online backup and offline restore commands, and
 maintenance mode. Restore validates the copied database before replacement and
 invalidates restored local sessions/API tokens.
+
+Shell jobs execute a single script argument through `/bin/bash -lc` by default,
+with `/bin/sh -lc` also supported. They load login profiles and reuse the exec
+adapter for output, cancellation, and recovery. Scripts are expanded on the Sprite.
 
 ## Decisions made while building
 

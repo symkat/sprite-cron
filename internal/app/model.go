@@ -51,6 +51,8 @@ type Policy struct {
 type Execution struct {
 	Type            string            `json:"type"`
 	Argv            []string          `json:"argv,omitempty"`
+	Script          string            `json:"script,omitempty"`
+	Shell           string            `json:"shell,omitempty"`
 	Directory       string            `json:"directory,omitempty"`
 	Env             map[string]string `json:"env,omitempty"`
 	Method          string            `json:"method,omitempty"`
@@ -115,12 +117,28 @@ func (j *Job) Validate() error {
 	}
 	e := &j.Execution
 	switch e.Type {
-	case "exec":
-		if len(e.Argv) == 0 || len(e.Argv) > 128 || e.Argv[0] == "" {
+	case "exec", "shell":
+		if e.Type == "shell" {
+			if e.Shell == "" {
+				e.Shell = "/bin/bash"
+			}
+			if e.Shell != "/bin/sh" && e.Shell != "/bin/bash" {
+				return errors.New("shell must be /bin/sh or /bin/bash")
+			}
+			if strings.TrimSpace(e.Script) == "" || strings.ContainsRune(e.Script, 0) {
+				return errors.New("shell requires a nonempty script without NUL")
+			}
+			if len(e.Argv) != 0 {
+				return errors.New("shell uses script, not argv")
+			}
+		} else if e.Script != "" || e.Shell != "" {
+			return errors.New("exec uses argv, not script or shell")
+		}
+		if e.Type == "exec" && (len(e.Argv) == 0 || len(e.Argv) > 128 || e.Argv[0] == "") {
 			return errors.New("exec requires argv (1–128 entries)")
 		}
 		if len(encoded(e)) > 65536 {
-			return errors.New("exec configuration exceeds 64 KiB")
+			return errors.New("command configuration exceeds 64 KiB")
 		}
 		for _, arg := range e.Argv {
 			if strings.ContainsRune(arg, 0) {
@@ -158,7 +176,7 @@ func (j *Job) Validate() error {
 			}
 		}
 	default:
-		return errors.New("execution.type must be exec or http")
+		return errors.New("execution.type must be exec, shell, or http")
 	}
 	return nil
 }

@@ -52,7 +52,7 @@ func (s *Scheduler) Recover() error {
 		for _, r := range list {
 			status := "unknown"
 			reason := "scheduler restarted; dispatch or completion uncertain"
-			if r.SessionID != "" && r.Snapshot.Job.Execution.Type == "exec" {
+			if r.SessionID != "" && (r.Snapshot.Job.Execution.Type == "exec" || r.Snapshot.Job.Execution.Type == "shell") {
 				status = "recovering"
 				reason = "reattaching after restart"
 			}

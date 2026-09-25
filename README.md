@@ -24,6 +24,7 @@ It exists to give persistent, centrally managed schedules to workloads on Sprite
 
 - Five-field cron expressions with an IANA time zone per job and a next-run preview.
 - Exec jobs with an argument vector, working directory, environment additions, stdout/stderr capture, and an exit status.
+- Shell jobs with login profiles, command substitution, redirects, and pipelines; Bash by default, with `/bin/sh` selectable.
 - HTTP jobs with a method, relative path, headers, body, status policy, and response capture.
 - Browser management of jobs, targets, encrypted credentials, run history, and personal API tokens.
 - Local administrator, operator, and reader accounts; non-interactive service accounts.
@@ -374,7 +375,52 @@ curl --fail-with-body --header @.env.api-header \
 JOB_ID=$(jq -r .id created-job.json)
 ```
 
-Arguments are passed directly, without shell interpretation. Use `argv: ["/bin/sh", "-lc", "..."]` only when you deliberately need shell behavior. The executable and working directory must exist on the Sprite. Environment entries are additions; secrets placed in job definitions are visible to job readers. Store application secrets on the Sprite or use the target's encrypted HTTP header credential.
+Arguments are passed directly, without shell interpretation. Use the `shell` job type below when you want shell interpretation. The executable and working directory must exist on the Sprite. Environment entries are additions; secrets placed in job definitions are visible to job readers. Store application secrets on the Sprite or use the target's encrypted HTTP header credential.
+
+### Shell job
+
+Use `execution.type: "shell"` and put the complete script in `script`:
+
+```json
+{
+  "type": "shell",
+  "shell": "/bin/bash",
+  "script": "echo \"Hello World \" `date` > /tmp/output.txt\ngrep foo /input.txt | cut -d \" \" -f 2",
+  "directory": "/home/sprite",
+  "env": {"REPORT_MODE": "daily"}
+}
+```
+
+Use this execution object in the same job envelope as the exec example. In the
+browser, choose **Sprite shell script**, select the shell, and enter the script
+as ordinary shell text (no JSON escaping needed in the script text area).
+
+The default is `/bin/bash -lc SCRIPT`; `shell: "/bin/sh"` selects
+`/bin/sh -lc SCRIPT`. Both are login shells, so startup profiles run before the
+script, similarly to logging in and entering a command. Bash reads `/etc/profile`
+and the first available `~/.bash_profile`, `~/.bash_login`, or `~/.profile`.
+Bash does not automatically read `.bashrc` in this mode; source it from a login
+profile if desired. `BASH_ENV`, when configured, also affects non-interactive
+Bash startup. See [Bash startup files](https://www.gnu.org/software/bash/manual/html_node/Bash-Startup-Files.html). These are non-interactive,
+non-TTY jobs: profiles should not prompt for input or assume a terminal.
+
+The complete script is sent as one argument to the selected shell on the Sprite.
+Variable expansion, backticks/`$(...)`, quoting, globbing, redirects, and pipelines
+happen there. Multiline scripts are supported. The working directory and environment
+additions are applied before startup; login profiles can change them. The selected
+shell and any commands used by the script must be installed on the Sprite.
+
+Shell jobs share exec's output capture, deadlines, termination, session recovery,
+retry policy, and run-ID environment variables. The shell's exit status determines
+the result. Normal shell rules apply: a pipeline usually reports its final command's
+status, and later commands can mask an earlier failure. With Bash, put
+`set -euo pipefail` at the start if those stricter failure semantics suit your script;
+they are not enabled automatically. `/bin/sh` features depend on its implementation.
+
+`script` must be nonempty and the command configuration is limited to 64 KiB.
+Do not supply `argv` for a shell job. Existing `exec` jobs continue to pass their
+argument arrays directly without interpreting shell syntax. Shell scripts and
+environment additions are visible to authorized job readers, just like exec arguments.
 
 ### HTTP job
 
@@ -461,9 +507,9 @@ Cron uses conventional day-of-month/day-of-week OR semantics when both are restr
 
 After downtime, `coalesce` creates one run for the most recent missed occurrence with a fresh grace window. `skip` runs that latest occurrence only if it remains within grace. A backlog is summarized rather than expanded into one execution per missed minute. Very large backlogs are processed in bounded chunks. There is no catch-up for schedules predating job creation or the latest edit.
 
-Exec exit code zero means success. A received nonzero exit can be retried only for a retry-safe job. Missing acknowledgements or exit results become `unknown`; exec is never automatically started again merely because a connection was lost. A saved session ID permits reattachment to that same session. Replayed output may duplicate a prefix and merge stderr into stdout. Completed sessions may no longer be attachable, so some outcomes remain unknown after restart.
+For exec and shell jobs, exit code zero means success. A received nonzero exit can be retried only for a retry-safe job. Missing acknowledgements or exit results become `unknown`; exec is never automatically started again merely because a connection was lost. A saved session ID permits reattachment to that same session. Replayed output may duplicate a prefix and merge stderr into stdout. Completed sessions may no longer be attachable, so some outcomes remain unknown after restart.
 
-On timeout, cancellation, or orderly shutdown, exec attempts request SIGTERM and then SIGKILL as needed, inspecting the termination stream. A cancelled local context alone is not proof that remote work stopped. The explicit disconnect window is 60 seconds, but platform enforcement is approximate. If termination cannot be confirmed, the outcome remains `unknown`.
+On timeout, cancellation, or orderly shutdown, exec and shell attempts request SIGTERM and then SIGKILL as needed, inspecting the termination stream. A cancelled local context alone is not proof that remote work stopped. The explicit disconnect window is 60 seconds, but platform enforcement is approximate. If termination cannot be confirmed, the outcome remains `unknown`.
 
 HTTP success is a completed 2xx response other than 202, optionally restricted to selected statuses. Connection loss, response interruption, or local cancellation cannot establish whether the handler applied its side effects. These become `unknown`. Retry-safe HTTP jobs may retry transport failures, 429, and 5xx responses. Retries use exponential backoff with jitter and honor `Retry-After` up to five minutes. A 202 response is not automatically retried.
 

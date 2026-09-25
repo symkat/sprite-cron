@@ -319,6 +319,13 @@ func (e *Executor) executeExec(ctx context.Context, r Run, onSession func(string
 			path += "/" + url.PathEscape(id)
 		} else {
 			q["cmd"] = r.Snapshot.Job.Execution.Argv
+			if r.Snapshot.Job.Execution.Type == "shell" {
+				shell := r.Snapshot.Job.Execution.Shell
+				if shell == "" {
+					shell = "/bin/bash"
+				}
+				q["cmd"] = []string{shell, "-lc", r.Snapshot.Job.Execution.Script}
+			}
 			q.Set("max_run_after_disconnect", "60s")
 			cfg := r.Snapshot.Job.Execution
 			if cfg.Directory != "" {
