@@ -80,7 +80,7 @@ Open `http://127.0.0.1:8080` and sign in. Password prompts do not echo input. Pa
 
 ### 1. Create the app and volume
 
-Install [flyctl](https://fly.io/docs/flyctl/install/), authenticate with `fly auth login`, and choose a globally unique app name. Run these commands from the repository. You need a Fly organization able to create a Machine and Volume, and a local Go toolchain for the key-generation helper.
+Install [flyctl](https://fly.io/docs/flyctl/install/), authenticate with `fly auth login`, and choose a globally unique app name. Run these commands from the repository. You need a Fly organization able to create a Machine and Volume, and a POSIX-compatible terminal (for example Bash or Zsh). You do not need Go, Docker, or Python installed locally for this Fly.io installation.
 
 ```sh
 export APP=your-unique-sprite-cron
@@ -91,29 +91,69 @@ fly volumes create cron_data --app "$APP" --region "$REGION" --size 1
 
 Edit [fly.toml](fly.toml): set `app` to the chosen name, `primary_region` to the volume's region, and `SPRITE_CRON_ORIGIN` to `https://YOUR_APP.fly.dev`. The origin must match the browser address exactly, without a trailing slash. Keep the database at `/data/sprite-cron.db` and the mount at `/data`.
 
-### 2. Set the encryption key
+### 2. Build remotely and generate the encryption key on Fly
 
-The key encrypts stored Sprite tokens and application header secrets. It is separate from your Fly token, Sprite tokens, local passwords, and the tokens clients use to call Sprite Cron.
+The key encrypts stored Sprite tokens and application header secrets. It is
+separate from your Fly token, Sprite tokens, local passwords, and the tokens
+clients use to call Sprite Cron.
+
+Build and push the image using Fly's remote builder, without starting the service:
 
 ```sh
-make build
-umask 077
-./bin/sprite-cron keygen > .env.encryption-key
-python3 - <<'PY' > .env.fly-secrets
-import json
-from pathlib import Path
-key = Path('.env.encryption-key').read_text().strip()
-print('SPRITE_CRON_KEYS=' + json.dumps({'v1': key}, separators=(',', ':')))
-PY
-fly secrets import --app "$APP" < .env.fly-secrets
+fly deploy --app "$APP" --remote-only --build-only --push
 ```
 
-Both `.env.*` files are Git-ignored and excluded from the Docker build. Store the key securely outside the Machine, then remove these temporary files. A database backup without the corresponding key cannot recover the encrypted credentials. [Fly secrets](https://fly.io/docs/apps/secrets/) are injected into the Machine environment; do not put keys in `fly.toml` or an image layer.
+Copy the full image reference printed by that command into `IMAGE` (replace the
+example tag below with the actual tag from your build):
+
+```sh
+export IMAGE="registry.fly.io/$APP:deployment-YOUR_BUILD_TAG"
+fly machine run "$IMAGE" maintenance --app "$APP" --region "$REGION" \
+  --name key-bootstrap --restart no
+```
+
+This temporary Machine runs the application's `maintenance` command, which needs
+no encryption key and starts neither HTTP nor the scheduler. It does not need
+the database volume. Record its Machine ID from the command output, or find
+`key-bootstrap` in `fly machine list --app "$APP"`.
+
+Generate the key through SSH into a protected file on your computer:
+
+```sh
+export BOOTSTRAP_MACHINE=the-key-bootstrap-machine-id
+umask 077
+fly ssh console --app "$APP" --machine "$BOOTSTRAP_MACHINE" --quiet \
+  -C 'sprite-cron keygen --fly-secret' > .env.fly-secrets
+```
+
+Proceed only if the SSH command succeeds. The file contains one
+`SPRITE_CRON_KEYS={"v1":"..."}` line, ready for import. `keygen` uses the operating
+system's cryptographic random source and requires no database or existing key.
+Running it through SSH keeps the key out of the Machine's main-process logs;
+do not make `keygen` the Machine's startup command or enable shell tracing.
+
+```sh
+fly secrets import --app "$APP" --stage < .env.fly-secrets
+fly machine destroy "$BOOTSTRAP_MACHINE" --app "$APP" --force
+```
+
+Stage the secret without triggering deployment, then remove only the temporary
+bootstrap Machine. Store `.env.fly-secrets` securely in your secret manager before
+removing the local file. It is Git-ignored and excluded from the Docker build.
+A database backup without the corresponding key cannot recover the encrypted
+credentials. If a step fails, keep the successfully generated key file and retry
+that step rather than generating a different key. This is a first-installation
+procedure; use [key rotation](#rotate-credentials-and-encryption-keys) for an
+existing installation.
+
+Fly supports [separate remote build and deployment](https://fly.io/docs/flyctl/deploy/),
+[temporary Machines with a custom command](https://fly.io/docs/machines/flyctl/fly-machine-run/),
+and [staged secret imports](https://fly.io/docs/flyctl/secrets-import/).
 
 ### 3. Deploy exactly one Machine
 
 ```sh
-fly deploy --app "$APP" --ha=false
+fly deploy --app "$APP" --image "$IMAGE" --ha=false
 fly scale count 1 --app "$APP"
 fly status --app "$APP"
 fly volumes list --app "$APP"
@@ -121,6 +161,7 @@ fly checks list --app "$APP"
 curl --fail "https://$APP.fly.dev/readyz"
 ```
 
+This deploys the image already built on Fly; it does not compile locally.
 Use `--ha=false` on the initial deployment to avoid a redundant Machine. Verify the final Machine count is one. Separate volumes contain separate databases and would create independent schedulers; the local database lock cannot coordinate them. [Fly's availability documentation](https://fly.io/docs/apps/app-availability/) explains default redundancy and scaling.
 
 The supplied configuration keeps the Machine running with `auto_stop_machines = "off"`. Traffic-driven autostop is unsuitable for a scheduler: a scheduled time is not an incoming HTTP request. The initial size is one shared CPU and 512 MB of RAM. Monitor usage before increasing the worker count. The entrypoint initializes volume permissions, then runs the application as UID/GID 10001.
@@ -485,7 +526,7 @@ df -h /data
 sprite-cron backup --out /data/before-upgrade.db
 exit
 # Back on your workstation:
-fly deploy --app "$APP" --ha=false
+fly deploy --app "$APP" --remote-only --ha=false
 ```
 
 Use unique backup filenames; the backup command refuses to overwrite an existing file. Upgrades on this single-Machine configuration can interrupt service. Interrupted known exec sessions are reconciled; interrupted HTTP requests and unacknowledged dispatches become unknown. New schema versions must include a migration and rollback assessment; older binaries refuse a newer database schema.

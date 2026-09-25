@@ -96,6 +96,36 @@ func password(stdin bool) (string, error) {
 	}
 	return string(b), nil
 }
+
+// keygen works before configuration or database initialization. Keep stdout
+// machine-readable so an SSH caller can securely redirect it into secrets import.
+func keygen(args []string, out io.Writer) error {
+	f := flag.NewFlagSet("keygen", flag.ContinueOnError)
+	f.SetOutput(io.Discard)
+	flySecret := f.Bool("fly-secret", false, "print a Fly secrets import line for key v1")
+	if err := f.Parse(args); err != nil {
+		return err
+	}
+	if f.NArg() != 0 {
+		return errors.New("keygen takes no positional arguments")
+	}
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return err
+	}
+	value := base64.StdEncoding.EncodeToString(b)
+	if *flySecret {
+		keyring, err := json.Marshal(map[string]string{"v1": value})
+		if err != nil {
+			return err
+		}
+		_, err = fmt.Fprintf(out, "SPRITE_CRON_KEYS=%s\n", keyring)
+		return err
+	}
+	_, err := fmt.Fprintln(out, value)
+	return err
+}
+
 func main() {
 	syscall.Umask(0077)
 	if err := run(os.Args[1:]); err != nil {
@@ -111,7 +141,7 @@ Commands:
   serve [--listen :8080] [--db PATH] [--origin https://HOST]
         [--insecure-local] [--workers 10] [--per-target 2] [--dispatch-disabled]
   init [--db PATH]
-  keygen
+  keygen [--fly-secret]
   users add NAME [--role admin|operator|reader] [--service-account] [--password-stdin]
   users list
   users reset-password NAME [--password-stdin]
@@ -145,12 +175,7 @@ See README.md for deployment, API examples, recovery, and credential management.
 		return nil
 	}
 	if args[0] == "keygen" {
-		b := make([]byte, 32)
-		if _, e := rand.Read(b); e != nil {
-			return e
-		}
-		fmt.Println(base64.StdEncoding.EncodeToString(b))
-		return nil
+		return keygen(args[1:], os.Stdout)
 	}
 	command := args[0]
 	sub := ""
