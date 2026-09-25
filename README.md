@@ -200,7 +200,36 @@ In the browser, sign in as an administrator:
 2. Open **Targets**. Choose an ID such as `reports`, enter the Sprite name, and select that credential. Save.
 3. The server fetches Sprite metadata and records its immutable ID, organization, and HTTPS URL. The URL is discovered from Sprites; arbitrary external URLs are not accepted.
 
-The primary credential is required for metadata verification and exec. Optionally supply a different Sprite credential for HTTP requests. If the endpoint requires an application secret, create a credential of kind `header` and configure a non-reserved header such as `X-Job-Secret` on the target. Job authors cannot override the authorization or idempotency headers.
+One Sprite credential authorizes metadata verification, exec/shell, and authenticated
+Sprite HTTP access. The registration form uses that same credential for both APIs.
+
+The optional **Application header credential** is for a secret your own HTTP
+application checks in addition to Sprite authentication. It references a saved
+credential of kind `header`; select it from the dropdown and enter the header name.
+For example:
+
+| Where | Field | Example |
+| --- | --- | --- |
+| Credentials | ID | `reports-secret` |
+| Credentials | Kind | Application HTTP header secret (`header`) |
+| Credentials | Secret value | `example-secret-value` |
+| Targets | Application header credential | Select `reports-secret` |
+| Targets | Application header name | `X-Job-Secret` |
+
+This sends `X-Job-Secret: example-secret-value`. The secret value is a single plain
+string sent exactly as entered—not a JSON map, a list of headers, or a full
+`Name: value` line. If your application requires a prefix in that custom header's
+value, include the prefix in the stored string. One target supports one encrypted
+application header. Use the job's **Headers (JSON object)** for additional non-secret
+headers, for example `{"Content-Type":"application/json","X-Report-Mode":"daily"}`.
+Custom non-reserved header names are accepted; `Authorization`, `Cookie`, `Host`,
+idempotency, and transport/routing headers are reserved. Job headers cannot replace
+the configured application secret: the target's credential value takes precedence.
+
+The legacy API field `http_credential_id` remains supported for existing targets
+and saved run snapshots. It is no longer offered in the UI; omit it for new targets
+to use `credential_id` for all Sprite authorization. No stored overrides are silently
+changed.
 
 A Sprite URL configured as `sprite` receives `Authorization: Bearer <Sprite token>` at the Sprite proxy. The proxy removes that header before forwarding the request to the application, so the application must not expect to see it. Public Sprite URLs require an explicit public target setting and a separate application credential; the HTTP handler must actually validate that secret. Prefer authenticated Sprite URLs.
 
@@ -486,7 +515,7 @@ All protected endpoints accept `Authorization: Bearer scron_...`. Browser sessio
 | `GET /api/tokens`, `POST /api/tokens`, `DELETE /api/tokens/{id}` | Browser only; own tokens, or all for administrators |
 | `GET /api/audit`, `GET /api/status` | Browser administrator only |
 
-Credential writes use `{"id":"sprite-main","label":"Production","kind":"sprite","value":"..."}`; `kind` can also be `header`. Target writes use `{"id":"reports","sprite_name":"my-sprite","credential_id":"sprite-main","public":false}` with optional `http_credential_id`, `app_credential_id`, and `app_header`. Token creation uses `name`, `password`, arrays `scopes` and `targets`, and `expires_hours`.
+Credential writes use `{"id":"sprite-main","label":"Production","kind":"sprite","value":"..."}`; `kind` can also be `header`. Target writes use `{"id":"reports","sprite_name":"my-sprite","credential_id":"sprite-main","public":false}` with optional `app_credential_id` and `app_header`. `app_credential_id` names a stored header credential; `app_header` is the HTTP header name. The legacy `http_credential_id` override is retained for compatibility, but new configurations should omit it. Token creation uses `name`, `password`, arrays `scopes` and `targets`, and `expires_hours`.
 
 Run lists return `{ "runs": [...], "next_offset": 100, "has_more": true }`. Follow `next_offset` until `has_more` is false, including after an empty filtered page. Offset pagination is intended for interactive history and can shift while new runs arrive. Errors return `{ "error": "..." }`: 400 validation, 401 unauthenticated, 403 unauthorized, 404 missing, 409 conflict, 429 login throttling, or 500 internal failure.
 

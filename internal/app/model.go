@@ -188,12 +188,14 @@ func reservedHeader(k string) bool {
 }
 
 type Target struct {
-	ID               string `json:"id"`
-	Name             string `json:"sprite_name"`
-	SpriteID         string `json:"sprite_id"`
-	Organization     string `json:"organization"`
-	URL              string `json:"url"`
-	CredentialID     string `json:"credential_id"`
+	ID           string `json:"id"`
+	Name         string `json:"sprite_name"`
+	SpriteID     string `json:"sprite_id"`
+	Organization string `json:"organization"`
+	URL          string `json:"url"`
+	CredentialID string `json:"credential_id"`
+	// Legacy override retained for existing targets and immutable run snapshots.
+	// New UI registrations use CredentialID for both API and HTTP authorization.
 	HTTPCredentialID string `json:"http_credential_id,omitempty"`
 	AppCredentialID  string `json:"app_credential_id,omitempty"`
 	AppHeader        string `json:"app_header,omitempty"`
