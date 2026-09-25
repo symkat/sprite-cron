@@ -82,7 +82,10 @@ browser: results are captured when an attempt finishes, and attempt metadata is
 available with run details. Past attempt output is retained internally for
 bounded retention but has no separate download endpoint.
 
-Credential and target creation/update are implemented; deleting/garbage-collecting
+Credential and target creation/update are implemented, including administrator-owned
+`credentials:write` and `targets:write` API tokens. Credential writes are global,
+write-only, encrypted, and audited; target allowlists do not scope shared credentials.
+Credential listing remains browser-administrator-only; deleting/garbage-collecting
 those resources is deferred. Targets can be created and updated through the administrator
 API using browser sessions or scoped `targets:write` bearer tokens; the initial browser form registers new targets. Misfire and retention limits
 are fixed rather than dynamically configurable. Audit listing is limited to the

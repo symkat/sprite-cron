@@ -234,13 +234,72 @@ allowlist is checked against the path ID for updates. Sprite metadata is fetched
 and verified for both operations; client-supplied URLs and Sprite IDs cannot
 replace that verification.
 
-The referenced `sprite-main` credential must already exist. This scope allows
-an administrator's automation to bind stored credentials to targets; it does
-not grant credential listing, secret retrieval, or credential creation. Credential
-setup continues to use an administrator browser session, while subsequent target
-provisioning requires no browser session or CSRF token. The token owner's current
-role must remain administrator; downgrading or disabling the owner removes target
-write access immediately. Use a separate operator token for ordinary job management.
+The referenced `sprite-main` credential must already exist. The `targets:write`
+scope permits binding stored credentials to targets, but does not grant credential
+creation or listing. Add `credentials:write` for the complete provisioning flow
+below. The token owner's current role must remain administrator; downgrading or
+disabling the owner removes target write access immediately. Use a separate
+operator token for ordinary job management.
+
+### Add and rotate credentials through the API
+
+Administrator-owned tokens with `credentials:write` can create and rotate Sprite
+API credentials and application header secrets. No browser session or CSRF token
+is needed. Issue a provisioning token from the local administration shell (using
+the administrator service account created above):
+
+```sh
+sprite-cron tokens create --user provisioner --name provisioning \
+  --scopes credentials:write,targets:read,targets:write,jobs:read,jobs:write \
+  --targets reports --expires-in 1d
+```
+
+Save the new token in `.env.api-header` as described above. Existing tokens do not
+automatically receive additional scopes. Create a credential using a protected
+request file so the Sprite secret does not appear in shell history or curl's
+command arguments:
+
+```sh
+umask 077
+python3 - <<'PYTHON' > .env.credential-request
+import getpass, json
+secret = getpass.getpass('Sprite API token: ')
+print(json.dumps({'id': 'sprite-main', 'label': 'Reports Sprite',
+                  'kind': 'sprite', 'value': secret}))
+PYTHON
+curl --fail-with-body --header @.env.api-header \
+  -H 'Content-Type: application/json' --data-binary @.env.credential-request \
+  "$BASE/api/credentials"
+```
+
+Success returns **201 Created** and only `{"id":"sprite-main"}`. A duplicate ID
+returns 409 and does not overwrite the credential. For an application header
+secret, use `kind: "header"`. You can now create a target referring to this ID,
+then create jobs, using the examples above and below.
+
+To rotate, regenerate the protected request file with the replacement value and
+send `PUT /api/credentials/sprite-main` using the same fields:
+
+```sh
+curl --fail-with-body --header @.env.api-header \
+  -H 'Content-Type: application/json' -X PUT \
+  --data-binary @.env.credential-request "$BASE/api/credentials/sprite-main"
+```
+
+Rotation returns 200 with the ID; a missing credential returns 404. Active,
+dispatching, or recovering attempts cause 409, preserving the current secret.
+Successful changes are encrypted and audited with the caller's token ID, without
+recording the secret in audit details. Remove the protected request file when
+finished. Responses never return secret values; `credentials:write` does not
+grant `GET /api/credentials`, user administration, or token issuance.
+
+**Credential write authority is global.** Credentials are shared resources and
+can be used by several targets. A token's target allowlist restricts target/job/run
+operations; it does not restrict which credential IDs `credentials:write` can
+create or rotate. Grant this scope only to trusted provisioning automation. The
+owner must remain an enabled administrator, and expiry/revocation is checked on
+every request. A credentials-only bootstrap token can use `--targets '*'` even
+before any targets exist; the scope itself grants no target access.
 
 ### Exec job
 
@@ -334,7 +393,8 @@ All protected endpoints accept `Authorization: Bearer scron_...`. Browser sessio
 | `POST /api/runs/{id}/cancel` | `runs:cancel`; requests cancellation |
 | `POST /api/runs/{id}/resolve` | `runs:cancel`; `{"accept_risk":true,"note":"investigation result"}` |
 | `POST /api/runs/{id}/retry` | `runs:trigger`; saved job must be retry-safe |
-| `GET /api/credentials`, `POST /api/credentials`, `PUT /api/credentials/{id}` | Browser administrator only; secret values are write-only |
+| `GET /api/credentials` | Browser administrator only; metadata only |
+| `POST /api/credentials`, `PUT /api/credentials/{id}` | Administrator browser session or administrator-owned token with global `credentials:write`; secrets are write-only |
 | `POST /api/targets`, `PUT /api/targets/{id}` | Administrator browser session or administrator-owned token with `targets:write` and matching target allowlist; verifies Sprite identity |
 | `GET /api/tokens`, `POST /api/tokens`, `DELETE /api/tokens/{id}` | Browser only; own tokens, or all for administrators |
 | `GET /api/audit`, `GET /api/status` | Browser administrator only |
@@ -392,7 +452,7 @@ sprite-cron auth reset
 
 Password reset/change and disabling a user revoke their sessions and API tokens. `auth reset` revokes **all** sessions and API tokens, preserving accounts and jobs. Role changes take effect immediately, including for existing tokens. There is no email password-reset flow: an administrator with shell access resets the password.
 
-Passwords use Argon2id with independent salts. Browser cookies are HttpOnly, Secure in production, and SameSite=Strict; sessions expire after 12 hours or 30 minutes idle. Login verification is rate- and concurrency-limited. API tokens are random opaque credentials; only SHA-256 digests are stored. Token lifetime is 1 minute to 366 days, with a 90-day CLI/browser default. Only an administrator can issue a wildcard `*` target allowlist or a `targets:write` token. Target-write tokens can allowlist future target IDs; other tokens require existing targets. Tokens cannot create users, issue more tokens, or read/write stored credentials.
+Passwords use Argon2id with independent salts. Browser cookies are HttpOnly, Secure in production, and SameSite=Strict; sessions expire after 12 hours or 30 minutes idle. Login verification is rate- and concurrency-limited. API tokens are random opaque credentials; only SHA-256 digests are stored. Token lifetime is 1 minute to 366 days, with a 90-day CLI/browser default. Only an administrator can issue a wildcard `*` target allowlist or a token with `targets:write` or `credentials:write`. Target-write tokens can allowlist future target IDs; other tokens require existing targets. Tokens cannot create users, issue more tokens, or read stored credentials. Only tokens explicitly granted `credentials:write` can create or rotate credential values.
 
 Sprite and application credentials use AES-256-GCM with random nonces, authenticated credential IDs, and a versioned keyring. The keyring is supplied independently of SQLite. This protects stored credential values, not the entire database: job definitions, usernames, audit details, and output are not encrypted by the application. Known credential values are redacted from completed captured output on a best-effort basis; transformed or unrelated secrets cannot be reliably recognized.
 
@@ -482,7 +542,7 @@ The Machine command overrides Docker's CMD, leaving the image entrypoint respons
 
 ### Rotate credentials and encryption keys
 
-To rotate a Sprite token or application header secret, edit its credential in **Credentials**, keeping the same ID and kind. Wait for active attempts to finish; the API rejects rotation while attempts are active. Investigate unknown runs first, since cancellation/recovery may still need the old Sprite token. Verify a manual run with the replacement before revoking the old token at its issuer.
+To rotate a Sprite token or application header secret, edit its credential in **Credentials** or use `PUT /api/credentials/{id}` with `credentials:write`, keeping the same ID and kind. Wait for active attempts to finish; the API rejects rotation while attempts are active. Investigate unknown runs first, since cancellation/recovery may still need the old Sprite token. Verify a manual run with the replacement before revoking the old token at its issuer.
 
 To rotate the database encryption key:
 
@@ -498,7 +558,7 @@ To rotate the database encryption key:
 | --- | --- |
 | Login says unauthorized or returns 403 | Correct account/password, enabled user, exact HTTPS origin, browser cookies, and matching hostname |
 | API returns 401 | Use a Sprite Cron token, not a Sprite token; check expiry, revocation, or password reset |
-| API returns 403 | Owner's current role, token scope, target allowlist; credential/token administration requires browser login |
+| API returns 403 | Owner's current role, token scope, target allowlist; credential writes need `credentials:write`; credential listing and token administration require browser login |
 | Target registration fails | Sprite name, token access, URL auth mode, encrypted key availability, app header configuration |
 | HTTP run fails or redirects | Service running on `0.0.0.0`, correct `--http-port`, relative path, Sprite token authorization |
 | Job remains queued or is skipped | Dispatch-disabled setting, worker capacity, start grace, job overlap, unresolved unknown runs |

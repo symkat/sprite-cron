@@ -297,7 +297,8 @@ func (a *App) credentialsList(w http.ResponseWriter, r *http.Request, p Principa
 	return nil
 }
 func (a *App) credentialsSave(w http.ResponseWriter, r *http.Request, p Principal) error {
-	if !p.Admin() {
+	// Credentials are shared resources, so this explicit admin scope is global.
+	if !p.Allows("credentials:write", "") {
 		return ErrForbidden
 	}
 	var input struct{ ID, Label, Kind, Value string }
@@ -316,7 +317,17 @@ func (a *App) credentialsSave(w http.ResponseWriter, r *http.Request, p Principa
 	}
 	err = transaction(a.Store.DB, func(tx *sql.Tx) error {
 		if r.Method == "POST" {
-			_, err = tx.Exec(`INSERT INTO credentials(id,label,kind,encrypted) VALUES(?,?,?,?)`, input.ID, input.Label, input.Kind, sealed)
+			result, e := tx.Exec(`INSERT INTO credentials(id,label,kind,encrypted) VALUES(?,?,?,?) ON CONFLICT(id) DO NOTHING`, input.ID, input.Label, input.Kind, sealed)
+			err = e
+			if e == nil {
+				n, e := result.RowsAffected()
+				if e != nil {
+					return e
+				}
+				if n == 0 {
+					return ErrConflict
+				}
+			}
 		} else {
 			var active int
 			if err = tx.QueryRow(`SELECT count(*) FROM runs WHERE status IN ('running','dispatching','recovering')`).Scan(&active); err != nil {
@@ -342,7 +353,11 @@ func (a *App) credentialsSave(w http.ResponseWriter, r *http.Request, p Principa
 	if err != nil {
 		return err
 	}
-	respond(w, 200, map[string]string{"id": input.ID})
+	status := http.StatusOK
+	if r.Method == "POST" {
+		status = http.StatusCreated
+	}
+	respond(w, status, map[string]string{"id": input.ID})
 	return nil
 }
 func (a *App) targetsList(w http.ResponseWriter, r *http.Request, p Principal) error {

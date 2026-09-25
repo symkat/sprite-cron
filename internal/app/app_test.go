@@ -558,7 +558,7 @@ func TestTokenTargetProvisioning(t *testing.T) {
 			t.Fatalf("%s received provisioning scope: %v", role, err)
 		}
 	}
-	token, _, err := s.NewToken("admin", "provision", []string{"targets:write", "targets:read"}, []string{"future"}, time.Hour, "test")
+	token, _, err := s.NewToken("admin", "provision", []string{"targets:write", "targets:read", "credentials:write"}, []string{"future"}, time.Hour, "test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -587,7 +587,14 @@ func TestTokenTargetProvisioning(t *testing.T) {
 		handler.ServeHTTP(w, r)
 		return w
 	}
-	target := Target{ID: "future", Name: "test-sprite", CredentialID: "cred", URL: "https://untrusted.invalid", SpriteID: "spoofed"}
+	credentialRequest := httptest.NewRequest("POST", "/api/credentials", strings.NewReader(`{"id":"api-created","label":"Automation","kind":"sprite","value":"test-private-secret"}`))
+	credentialRequest.Header.Set("Authorization", "Bearer "+token)
+	credentialResponse := httptest.NewRecorder()
+	handler.ServeHTTP(credentialResponse, credentialRequest)
+	if credentialResponse.Code != 201 {
+		t.Fatal("credential bootstrap failed", credentialResponse.Code)
+	}
+	target := Target{ID: "future", Name: "test-sprite", CredentialID: "api-created", URL: "https://untrusted.invalid", SpriteID: "spoofed"}
 	if w := call("POST", "/api/targets", readOnly, target); w.Code != 403 {
 		t.Fatal("read-only token created target", w.Code)
 	}
@@ -632,4 +639,104 @@ func TestTokenTargetProvisioning(t *testing.T) {
 	if requests.Load() != before {
 		t.Fatal("downgraded request reached upstream")
 	}
+}
+
+func TestTokenCredentialProvisioning(t *testing.T) {
+	s, v, j := fixture(t)
+	for _, role := range []string{"admin", "operator", "reader"} {
+		if err := s.AddUser(role, role, "", true); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, role := range []string{"operator", "reader"} {
+		if _, _, err := s.NewToken(role, "provision", []string{"credentials:write"}, []string{"test"}, time.Hour, "test"); !errors.Is(err, ErrForbidden) {
+			t.Fatalf("%s received credential scope: %v", role, err)
+		}
+	}
+	token, info, err := s.NewToken("admin", "provision", []string{"credentials:write"}, []string{"test"}, time.Hour, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ordinary, _, err := s.NewToken("admin", "jobs", []string{"jobs:write", "targets:write"}, []string{"test"}, time.Hour, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	e := NewExecutor(s, v)
+	handler := NewApp(s, v, e, NewScheduler(s, e, 2, 1), "https://cron.test", false).Handler()
+	call := func(method, path, raw, secret string) *httptest.ResponseRecorder {
+		t.Helper()
+		r := httptest.NewRequest(method, path, strings.NewReader(encoded(map[string]string{"id": "provisioned", "label": "Automation", "kind": "sprite", "value": secret})))
+		r.Header.Set("Authorization", "Bearer "+raw)
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, r)
+		if strings.Contains(w.Body.String(), secret) {
+			t.Fatal("secret in API response")
+		}
+		return w
+	}
+	if w := call("POST", "/api/credentials", ordinary, "initial-secret"); w.Code != 403 {
+		t.Fatal("ordinary token wrote credential", w.Code)
+	}
+	if w := call("POST", "/api/credentials", token, "initial-secret"); w.Code != 201 {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	assertSecret := func(want string, version int) {
+		t.Helper()
+		var cipher string
+		var gotVersion int
+		if err := s.DB.QueryRow(`SELECT encrypted,version FROM credentials WHERE id='provisioned'`).Scan(&cipher, &gotVersion); err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(cipher, want) {
+			t.Fatal("plaintext storage")
+		}
+		plain, err := v.Open("provisioned", cipher)
+		if err != nil || plain != want || gotVersion != version {
+			t.Fatal("credential mismatch", err, gotVersion)
+		}
+	}
+	assertSecret("initial-secret", 1)
+	if w := call("POST", "/api/credentials", token, "replacement-secret"); w.Code != 409 {
+		t.Fatal("duplicate create overwrote credential", w.Code)
+	}
+	assertSecret("initial-secret", 1)
+	r := queued(t, s, j)
+	for _, state := range []string{"running", "dispatching", "recovering"} {
+		mustExec(t, s, `UPDATE runs SET status=? WHERE id=?`, state, r.ID)
+		if w := call("PUT", "/api/credentials/provisioned", token, "replacement-secret"); w.Code != 409 {
+			t.Fatalf("rotated while %s: %d", state, w.Code)
+		}
+		assertSecret("initial-secret", 1)
+	}
+	mustExec(t, s, `UPDATE runs SET status='succeeded' WHERE id=?`, r.ID)
+	if w := call("PUT", "/api/credentials/provisioned", token, "replacement-secret"); w.Code != 200 {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	assertSecret("replacement-secret", 2)
+	if w := call("PUT", "/api/credentials/missing", token, "replacement-secret"); w.Code != 404 {
+		t.Fatal("missing update", w.Code)
+	}
+	if w := call("GET", "/api/credentials", token, "replacement-secret"); w.Code != 403 {
+		t.Fatal("write scope allowed listing", w.Code)
+	}
+	var count int
+	if err = s.DB.QueryRow(`SELECT count(*) FROM audit WHERE action='credential.save' AND object='provisioned' AND actor=? AND detail=''`, "admin/token:"+info.ID).Scan(&count); err != nil || count != 2 {
+		t.Fatal("audit does not identify token without secret", count, err)
+	}
+	if err = s.ChangeUser("admin", "role", "operator", "test"); err != nil {
+		t.Fatal(err)
+	}
+	if w := call("PUT", "/api/credentials/provisioned", token, "forbidden-secret"); w.Code != 403 {
+		t.Fatal("downgraded owner retained access", w.Code)
+	}
+	if err = s.ChangeUser("admin", "role", "admin", "test"); err != nil {
+		t.Fatal(err)
+	}
+	if err = s.RevokeToken(info.ID, "test"); err != nil {
+		t.Fatal(err)
+	}
+	if w := call("PUT", "/api/credentials/provisioned", token, "forbidden-secret"); w.Code != 401 {
+		t.Fatal("revoked token retained access", w.Code)
+	}
+	assertSecret("replacement-secret", 2)
 }
