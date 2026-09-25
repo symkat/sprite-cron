@@ -221,7 +221,7 @@ func (s *Store) Users() ([]User, error) {
 	return list, rows.Err()
 }
 
-var Scopes = []string{"jobs:read", "jobs:write", "runs:read", "runs:trigger", "runs:cancel", "targets:read"}
+var Scopes = []string{"jobs:read", "jobs:write", "runs:read", "runs:trigger", "runs:cancel", "targets:read", "targets:write"}
 
 func contains(list []string, s string) bool {
 	for _, v := range list {
@@ -256,6 +256,9 @@ func (s *Store) NewToken(username, name string, scopes, targets []string, ttl ti
 		return "", info, errors.New("name, scopes, targets and expiry (1 minute–366 days) required")
 	}
 	for _, scope := range scopes {
+		if scope == "targets:write" && u.Role != "admin" {
+			return "", info, ErrForbidden
+		}
 		if !contains(Scopes, scope) || u.Role == "reader" && !strings.HasSuffix(scope, ":read") {
 			return "", info, ErrForbidden
 		}
@@ -265,6 +268,13 @@ func (s *Store) NewToken(username, name string, scopes, targets []string, ttl ti
 			if u.Role != "admin" {
 				return "", info, errors.New("all-target tokens require an administrator")
 			}
+			continue
+		}
+		if !identifier.MatchString(target) {
+			return "", info, errors.New("invalid target ID")
+		}
+		// Provisioning tokens may name a target before it exists.
+		if contains(scopes, "targets:write") {
 			continue
 		}
 		if _, e = targetFrom(s.DB, target); e != nil {
@@ -321,7 +331,7 @@ func (p Principal) Actor() string {
 	return p.User.Username
 }
 func (p Principal) Allows(scope, target string) bool {
-	if p.User.Disabled {
+	if p.User.Disabled || scope == "targets:write" && p.User.Role != "admin" {
 		return false
 	}
 	if p.User.Role == "reader" && !strings.HasSuffix(scope, ":read") {

@@ -545,3 +545,91 @@ func TestCancelledRetryPreservesUncertainty(t *testing.T) {
 		})
 	}
 }
+
+func TestTokenTargetProvisioning(t *testing.T) {
+	s, v, _ := fixture(t)
+	for _, role := range []string{"admin", "operator", "reader"} {
+		if err := s.AddUser(role, role, "", true); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, role := range []string{"operator", "reader"} {
+		if _, _, err := s.NewToken(role, "provision", []string{"targets:write"}, []string{"future"}, time.Hour, "test"); !errors.Is(err, ErrForbidden) {
+			t.Fatalf("%s received provisioning scope: %v", role, err)
+		}
+	}
+	token, _, err := s.NewToken("admin", "provision", []string{"targets:write", "targets:read"}, []string{"future"}, time.Hour, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	readOnly, _, err := s.NewToken("admin", "reader", []string{"targets:read"}, []string{"test"}, time.Hour, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var requests atomic.Int32
+	remote := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		if r.Header.Get("Authorization") != "Bearer test-private-secret" {
+			t.Error("metadata credential missing")
+		}
+		respond(w, 200, map[string]any{"id": "verified-id", "name": "test-sprite", "url": "https://verified.sprites.app", "organization": "verified-org", "url_settings": map[string]string{"auth": "sprite"}})
+	}))
+	defer remote.Close()
+	e := NewExecutor(s, v)
+	e.BaseURL = remote.URL
+	e.HTTP = remote.Client()
+	handler := NewApp(s, v, e, NewScheduler(s, e, 2, 1), "https://cron.test", false).Handler()
+	call := func(method, path, raw string, target Target) *httptest.ResponseRecorder {
+		t.Helper()
+		r := httptest.NewRequest(method, path, strings.NewReader(encoded(target)))
+		r.Header.Set("Authorization", "Bearer "+raw)
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, r)
+		return w
+	}
+	target := Target{ID: "future", Name: "test-sprite", CredentialID: "cred", URL: "https://untrusted.invalid", SpriteID: "spoofed"}
+	if w := call("POST", "/api/targets", readOnly, target); w.Code != 403 {
+		t.Fatal("read-only token created target", w.Code)
+	}
+	outside := target
+	outside.ID = "outside"
+	if w := call("POST", "/api/targets", token, outside); w.Code != 403 {
+		t.Fatal("allowlist bypass", w.Code)
+	}
+	if requests.Load() != 0 {
+		t.Fatal("unauthorized request reached Sprite API")
+	}
+	if w := call("POST", "/api/targets", token, target); w.Code != 201 {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	saved, err := targetFrom(s.DB, "future")
+	if err != nil || saved.SpriteID != "verified-id" || saved.URL != "https://verified.sprites.app" {
+		t.Fatal("unverified metadata persisted", saved, err)
+	}
+	if w := call("POST", "/api/targets", token, target); w.Code != 409 {
+		t.Fatal("duplicate target not rejected", w.Code)
+	}
+	if w := call("PUT", "/api/targets/future", token, target); w.Code != 200 {
+		t.Fatal("target update failed", w.Code, w.Body.String())
+	}
+	if w := call("PUT", "/api/targets/test", token, target); w.Code != 403 {
+		t.Fatal("update used body ID instead of path allowlist", w.Code)
+	}
+	if w := call("GET", "/api/credentials", token, Target{}); w.Code != 403 {
+		t.Fatal("provisioner could read credentials", w.Code)
+	}
+	var events int
+	if err = s.DB.QueryRow(`SELECT count(*) FROM audit WHERE action='target.save' AND object='future'`).Scan(&events); err != nil || events != 2 {
+		t.Fatal("missing audit", events, err)
+	}
+	if err = s.ChangeUser("admin", "role", "operator", "test"); err != nil {
+		t.Fatal(err)
+	}
+	before := requests.Load()
+	if w := call("PUT", "/api/targets/future", token, target); w.Code != 403 {
+		t.Fatal("downgraded owner retained write access", w.Code)
+	}
+	if requests.Load() != before {
+		t.Fatal("downgraded request reached upstream")
+	}
+}

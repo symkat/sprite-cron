@@ -203,6 +203,45 @@ unset CRON_API_TOKEN
 
 Use `--header @.env.api-header` in the examples below. Remove that temporary file when finished. Examples use `jq` to extract response fields; it is optional for the service itself.
 
+### Create a target with a bearer token
+
+Target provisioning supports API tokens with `targets:write`. From the local
+administration shell, create an administrator service account and issue a token
+restricted to the target ID you intend to create:
+
+```sh
+sprite-cron users add provisioner --role admin --service-account
+sprite-cron tokens create --user provisioner --name target-provisioning \
+  --scopes targets:read,targets:write --targets reports --expires-in 1d
+```
+
+A token containing `targets:write` may allowlist a target ID before it exists.
+Use `--targets '*'` only when the provisioner needs to manage every target.
+Existing tokens do not gain the new scope automatically; issue a new token.
+Store this token in `.env.api-header` using the protected-file procedure above.
+
+```sh
+curl --fail-with-body --header @.env.api-header \
+  -H 'Content-Type: application/json' \
+  --data '{"id":"reports","sprite_name":"my-sprite","credential_id":"sprite-main","public":false}' \
+  "$BASE/api/targets"
+```
+
+Success returns **201 Created** with the verified target, including its Sprite
+ID and URL. A duplicate target ID returns 409. Update/revalidate a target with
+`PUT /api/targets/reports` and the same target fields; success returns 200. The
+allowlist is checked against the path ID for updates. Sprite metadata is fetched
+and verified for both operations; client-supplied URLs and Sprite IDs cannot
+replace that verification.
+
+The referenced `sprite-main` credential must already exist. This scope allows
+an administrator's automation to bind stored credentials to targets; it does
+not grant credential listing, secret retrieval, or credential creation. Credential
+setup continues to use an administrator browser session, while subsequent target
+provisioning requires no browser session or CSRF token. The token owner's current
+role must remain administrator; downgrading or disabling the owner removes target
+write access immediately. Use a separate operator token for ordinary job management.
+
 ### Exec job
 
 ```sh
@@ -296,7 +335,7 @@ All protected endpoints accept `Authorization: Bearer scron_...`. Browser sessio
 | `POST /api/runs/{id}/resolve` | `runs:cancel`; `{"accept_risk":true,"note":"investigation result"}` |
 | `POST /api/runs/{id}/retry` | `runs:trigger`; saved job must be retry-safe |
 | `GET /api/credentials`, `POST /api/credentials`, `PUT /api/credentials/{id}` | Browser administrator only; secret values are write-only |
-| `POST /api/targets`, `PUT /api/targets/{id}` | Browser administrator only; verifies Sprite identity |
+| `POST /api/targets`, `PUT /api/targets/{id}` | Administrator browser session or administrator-owned token with `targets:write` and matching target allowlist; verifies Sprite identity |
 | `GET /api/tokens`, `POST /api/tokens`, `DELETE /api/tokens/{id}` | Browser only; own tokens, or all for administrators |
 | `GET /api/audit`, `GET /api/status` | Browser administrator only |
 
@@ -353,7 +392,7 @@ sprite-cron auth reset
 
 Password reset/change and disabling a user revoke their sessions and API tokens. `auth reset` revokes **all** sessions and API tokens, preserving accounts and jobs. Role changes take effect immediately, including for existing tokens. There is no email password-reset flow: an administrator with shell access resets the password.
 
-Passwords use Argon2id with independent salts. Browser cookies are HttpOnly, Secure in production, and SameSite=Strict; sessions expire after 12 hours or 30 minutes idle. Login verification is rate- and concurrency-limited. API tokens are random opaque credentials; only SHA-256 digests are stored. Token lifetime is 1 minute to 366 days, with a 90-day CLI/browser default. Only an administrator can issue a wildcard `*` target allowlist. Tokens cannot create users, issue more tokens, or read/write stored credentials.
+Passwords use Argon2id with independent salts. Browser cookies are HttpOnly, Secure in production, and SameSite=Strict; sessions expire after 12 hours or 30 minutes idle. Login verification is rate- and concurrency-limited. API tokens are random opaque credentials; only SHA-256 digests are stored. Token lifetime is 1 minute to 366 days, with a 90-day CLI/browser default. Only an administrator can issue a wildcard `*` target allowlist or a `targets:write` token. Target-write tokens can allowlist future target IDs; other tokens require existing targets. Tokens cannot create users, issue more tokens, or read/write stored credentials.
 
 Sprite and application credentials use AES-256-GCM with random nonces, authenticated credential IDs, and a versioned keyring. The keyring is supplied independently of SQLite. This protects stored credential values, not the entire database: job definitions, usernames, audit details, and output are not encrypted by the application. Known credential values are redacted from completed captured output on a best-effort basis; transformed or unrelated secrets cannot be reliably recognized.
 

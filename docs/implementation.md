@@ -83,8 +83,8 @@ available with run details. Past attempt output is retained internally for
 bounded retention but has no separate download endpoint.
 
 Credential and target creation/update are implemented; deleting/garbage-collecting
-those resources is deferred. Targets can be updated through the administrator
-API; the initial browser form registers new targets. Misfire and retention limits
+those resources is deferred. Targets can be created and updated through the administrator
+API using browser sessions or scoped `targets:write` bearer tokens; the initial browser form registers new targets. Misfire and retention limits
 are fixed rather than dynamically configurable. Audit listing is limited to the
 most recent 200 events. Browser tables use manual refresh and offset pagination.
 

@@ -363,7 +363,7 @@ func (a *App) targetsList(w http.ResponseWriter, r *http.Request, p Principal) e
 	return nil
 }
 func (a *App) targetsSave(w http.ResponseWriter, r *http.Request, p Principal) error {
-	if !p.Admin() {
+	if !p.Allows("targets:write", "") {
 		return ErrForbidden
 	}
 	var t Target
@@ -371,6 +371,12 @@ func (a *App) targetsSave(w http.ResponseWriter, r *http.Request, p Principal) e
 		return err
 	}
 	id := r.PathValue("id")
+	if id != "" {
+		t.ID = id
+	}
+	if !p.Allows("targets:write", t.ID) {
+		return ErrForbidden
+	}
 	if id != "" {
 		old, err := targetFrom(a.Store.DB, id)
 		if err != nil {
@@ -400,7 +406,17 @@ func (a *App) targetsSave(w http.ResponseWriter, r *http.Request, p Principal) e
 	}
 	err = transaction(a.Store.DB, func(tx *sql.Tx) error {
 		if id == "" {
-			_, err = tx.Exec(`INSERT INTO targets(id,data) VALUES(?,?)`, validated.ID, encoded(validated))
+			var result sql.Result
+			result, err = tx.Exec(`INSERT INTO targets(id,data) VALUES(?,?) ON CONFLICT(id) DO NOTHING`, validated.ID, encoded(validated))
+			if err == nil {
+				n, e := result.RowsAffected()
+				if e != nil {
+					return e
+				}
+				if n == 0 {
+					return ErrConflict
+				}
+			}
 		} else {
 			_, err = tx.Exec(`UPDATE targets SET data=? WHERE id=?`, encoded(validated), id)
 		}
@@ -412,7 +428,11 @@ func (a *App) targetsSave(w http.ResponseWriter, r *http.Request, p Principal) e
 	if err != nil {
 		return err
 	}
-	respond(w, 200, validated)
+	status := http.StatusOK
+	if id == "" {
+		status = http.StatusCreated
+	}
+	respond(w, status, validated)
 	return nil
 }
 func (a *App) jobsList(w http.ResponseWriter, r *http.Request, p Principal) error {
