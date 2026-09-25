@@ -1,6 +1,11 @@
 # Sprite Cron: design and research plan
 
-Status: proposed design, before implementation. Research checked September 25, 2026.
+Status: original design record. Research checked September 25, 2026.
+
+An initial implementation now exists. The [README](../README.md) describes current
+behavior; [implementation notes](implementation.md) record scope and departures
+from this plan, including the direct exec adapter. Proposals below are not all
+implemented.
 
 ## Recommendation
 

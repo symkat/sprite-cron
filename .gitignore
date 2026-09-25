@@ -1,0 +1,10 @@
+/bin/
+/data/
+*.db
+*.db-shm
+*.db-wal
+*.lock
+.env
+.env.*
+!.env.example
+coverage.out

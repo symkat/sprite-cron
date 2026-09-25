@@ -9,6 +9,11 @@ shows that the live session-list shape matches the SDK, and identifies replay
 and completed-session recovery limits. The local findings below remain the
 record of the original source/protocol review.
 
+Implementation follow-up: the initial service selected the focused direct
+WebSocket fallback so it can explicitly control disconnect lifetime and remote
+termination without maintaining an SDK fork. See [implementation notes](implementation.md).
+The recommendation below preserves the original research decision and conditions.
+
 ## Recommendation
 
 **Prefer the Go SDK as the foundation for exec, behind our own adapter, provided
@@ -66,7 +71,7 @@ Prefer a reviewed immutable revision containing these fixes over a floating
 Tests used Go 1.26.0 on Linux/amd64. SDK source, dependencies, and toolchains were
 kept outside the application tree. No real tokens, remote commands, or live
 Sprite mutations were needed. Local servers bound ephemeral loopback ports.
-The checked-in [research probes](research/sprites_sdk_test.go) are reproducible
+The checked-in [research probes](research/sprites_sdk_test.go.txt) are reproducible
 experiments, not the beginning of the application implementation.
 
 ## What the SDK does well
@@ -315,7 +320,7 @@ Use the commands below to reproduce against a fresh, disposable SDK checkout:
 git clone https://github.com/superfly/sprites-go.git /tmp/sprites-sdk-review
 cd /tmp/sprites-sdk-review
 git checkout --detach d5d8f95cf4a35be923bda318f4fcbd40c1a9c439
-cp /path/to/sprite-cron/docs/research/sprites_sdk_test.go ./sprite_cron_research_test.go
+cp /path/to/sprite-cron/docs/research/sprites_sdk_test.go.txt ./sprite_cron_research_test.go
 env -u SPRITES_TEST_TOKEN GOTOOLCHAIN=go1.26.0 go test -run '^TestResearch' -v -count=1 -timeout=30s .
 env -u SPRITES_TEST_TOKEN GOTOOLCHAIN=go1.26.0 go test -race -run '^TestResearchMissingExitIsNotSuccess$' -count=20 -timeout=30s .
 ```
