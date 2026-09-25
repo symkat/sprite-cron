@@ -11,3 +11,6 @@ access, with source findings and reproducible local protocol probes.
 
 [Live validation](docs/live-sprite-validation.md) records subsequent tests against
 a real Sprite, including recovery limits and sanitized result evidence.
+
+A [small HTTP probe](examples/http-probe/README.md) is deployed as a service on the
+test Sprite for authenticated HTTP testing.
