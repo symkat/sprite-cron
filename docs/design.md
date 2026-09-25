@@ -44,7 +44,8 @@ Multiple credential records must work regardless of token scope.
 
 ## User workflow and first-version scope
 
-1. Sign in as a team member; an administrator adds a named Sprite credential.
+1. A machine operator creates a local account using the CLI. Sign in with that
+   username and password; an administrator adds a named Sprite credential.
 2. Register a Sprite by name and credential. Fetch its organization, ID, and URL;
    show the resolved target before enabling jobs.
 3. Create a job: choose exec or HTTP, enter a schedule and time zone, configure
@@ -311,7 +312,8 @@ Proposed tables:
 
 | Table | Purpose |
 | --- | --- |
-| `users`, `sessions` | Team identities, roles, and expiring login sessions. |
+| `users`, `sessions` | Local accounts, password hashes, roles, disabled state, and hashed expiring browser sessions. |
+| `api_tokens` | Token digest, owner, label, scopes, target restrictions, expiry, revocation, and usage timestamps. |
 | `credentials`, `credential_versions` | Encrypted values, labels, and rotation history. |
 | `targets` | Verified Sprite identity, origin, and allowed credential bindings. |
 | `jobs`, `job_revisions` | Current schedule cursor and immutable configuration revisions. |
@@ -332,6 +334,136 @@ history. Run-now is a POST; all state-changing operations require authorization.
 The UI should show schedule/time zone, next occurrence, last outcome, lateness,
 and unresolved runs without exposing secret values.
 
+## Local authentication and management API tokens
+
+Authentication is self-contained: no OIDC provider, external identity service,
+email delivery, or public registration is required. Account administration is a
+local CLI operation requiring shell access and OS permission to the application's
+database. Application administrator privileges alone do not permit creating
+users or changing account roles through HTTP.
+
+### Accounts and browser login
+
+Proposed commands, run on the volume-owning Machine:
+
+```sh
+sprite-cron users add kate --role admin
+sprite-cron users add automation --role operator --service-account
+sprite-cron users list
+sprite-cron users set-role kate --role admin
+sprite-cron users reset-password kate
+sprite-cron users disable automation
+```
+
+Interactive password commands use a hidden terminal prompt, never a password
+argument. Human accounts have a username and password; email is unnecessary.
+Service accounts have no password and cannot log in through the browser. Both
+account types can own API tokens. No default account or default password exists;
+with no users, management stays locked until the first account is created locally.
+
+The CLI uses the configured database path and the same migrations, validation,
+and transaction layer as the daemon. It can operate while the daemon is running,
+with SQLite serializing short writes. It must fail on a missing/wrong database
+rather than silently initialize a second one. Restrict database file permissions
+and record local administration events, including that the action came from the
+CLI. Shell/database access is the administrative trust boundary; OS-level audit
+is needed to attribute multiple people sharing the same OS account.
+
+Hash passwords with a maintained Argon2id implementation, a unique random salt,
+and stored algorithm parameters. Start at OWASP's minimum of 19 MiB memory, two
+iterations, and parallelism one; benchmark and increase the work factor within
+the Machine's resource budget. Limit concurrent password verification and rate
+limit login by account and source, with generic failure responses. Never store
+reversible passwords. [OWASP password storage guidance](https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html)
+
+After login, issue an opaque random session identifier and store only its digest
+server-side. Use a Secure, HttpOnly, SameSite cookie and CSRF protection on
+cookie-authenticated mutations. Proposed limits: 30 minutes idle and 12 hours
+absolute lifetime. Rotate the session on login; invalidate it on logout. Password
+changes/resets revoke all browser sessions and API tokens for that account;
+account disabling also revokes both. Check current account status and permissions
+on every request so local changes apply without restarting the daemon.
+[OWASP session guidance](https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html)
+
+Provide a logged-in password-change page requiring the current password. Account
+recovery and administrative resets use the CLI; there is no email reset flow.
+
+### API tokens for automation
+
+These are **Sprite Cron API tokens**, issued by this service. They authenticate
+clients adding/managing jobs; they are distinct from the upstream Sprite API
+credentials used by workers. Never accept an upstream Sprite token as management
+authentication or send a Sprite Cron token to a Sprite.
+
+Example token issuance and revocation (proposed CLI):
+
+```sh
+sprite-cron tokens create --user automation --name deploy-pipeline --scopes jobs:read,jobs:write --targets reporting-sprite --expires-in 90d
+sprite-cron tokens list --user automation
+sprite-cron tokens revoke TOKEN_ID
+```
+
+Generate an opaque token such as `scron_<public-id>_<random-secret>` with 32 bytes
+of cryptographic randomness in the secret. Show the full value once at creation;
+store only its SHA-256 digest plus metadata and compare digests in constant time.
+A fast digest is appropriate for this high-entropy random secret, unlike a human
+password. The public ID locates the record and can appear in audit events; the
+secret must never appear in logs, URLs, later API responses, or exports.
+
+Clients send the token over HTTPS as `Authorization: Bearer <token>` when calling
+endpoints such as `POST /api/jobs`. Validate its digest, expiration, revocation,
+owner status, scopes, and resource restrictions on every request. Tokens do not
+need external validation or a JWT signing service. Reject requests presenting
+both a bearer token and a browser session rather than mixing their permissions.
+Cookie authentication requires CSRF protection; bearer-only requests do not use
+ambient browser credentials. Do not enable permissive cross-origin access.
+
+Initial scopes:
+
+| Scope | Allows |
+| --- | --- |
+| `jobs:read` | List/read job configuration and preview schedules. |
+| `jobs:write` | Create, edit, pause/resume, and delete schedules on allowed targets. |
+| `runs:read` | Read run history and captured output on allowed targets. |
+| `runs:trigger` | Run-now and explicit retry on allowed targets. |
+| `runs:cancel` | Request cancellation on allowed targets. |
+| `targets:read` | Read nonsecret metadata for allowed targets. |
+
+Effective authority is the intersection of the owner's current role, the token's
+scopes, and its explicit target allowlist. An administrator may deliberately
+issue an all-target token; adding targets does not expand a specific allowlist.
+Validate both old and new targets when moving a job. Apply these checks to list,
+detail, history, and mutation endpoints, not just job creation. Bind execution to
+the target's approved upstream credentials; a token cannot choose arbitrary
+credential overrides. In v1, tokens cannot administer users, credentials, target
+bindings, or other tokens, even if their owner is an administrator.
+
+`jobs:write` is execution authority: creating or enabling a schedule can run
+arbitrary commands on an allowed target without `runs:trigger`. The latter only
+controls immediate/manual execution. Document this distinction when issuing a
+token. Readers cannot receive effective write or execution permissions.
+
+The CLI can create tokens for an existing account. Human users can also create,
+list, and revoke their own tokens in the UI after recent password verification;
+issuance cannot exceed their role. Administrative UI revocation is allowed, but
+issuing tokens for other accounts remains a local CLI action. Token-management
+HTTP routes require a browser session and CSRF protection; an API token cannot
+mint replacements or escalate itself.
+
+Default to a 90-day expiry, require an explicit expiry at issuance, and show
+expiry/last-use metadata. Rotate by creating a replacement, updating the caller,
+then revoking the old token. Revocation takes effect on the next request; it does
+not undo accepted jobs or terminate already-running work. Jobs remain configured
+when the creating token expires or is revoked; disabling an account likewise
+blocks access but does not pause its schedules. Offer deliberate job pause and
+cancellation actions for incident response. Audit the actor and token ID on
+accepted changes and manual runs.
+
+Backups contain password/token/session digests. A restore may resurrect previously
+revoked credentials: clear browser sessions and revoke all management API tokens
+as part of the restore procedure, then issue fresh tokens locally. Reconcile
+account disablement and role changes before reopening management access.
+
 ## Security boundary
 
 Job authors can execute code with the authority of the credentials assigned to
@@ -339,8 +471,8 @@ their targets. In v1, everyone with an operator role is trusted within the team;
 readers cannot edit or run jobs, and administrators control credentials and target
 bindings. Independent customer isolation would require a separate design.
 
-Use established OIDC login rather than custom password handling, server-side
-sessions, secure HttpOnly cookies, CSRF protection, and audited role checks.
+Use the local accounts, browser sessions, and scoped API tokens described above,
+with shared authorization checks for the UI and management API.
 Require TLS on management access. Keep diagnostic/metrics endpoints private and
 public health responses minimal. Do not expose environment dumps or arbitrary
 filesystem reads.
@@ -441,10 +573,16 @@ verify uncertain work is not blindly repeated.
 
 ### 4. Management API and UI
 
-Implement login/roles, job and target forms, schedule previews, credential
-rotation, audit, and run history. Acceptance: unauthorized access fails, CSRF and
-SSRF tests pass, secret values never appear in API reads/logs, and output is
-safely rendered. A user can configure and diagnose both kinds of job end to end.
+Implement local account/password CLI commands, login/roles, browser sessions,
+scoped API tokens, job and target forms, schedule previews, credential rotation,
+audit, and run history. Acceptance: bootstrap and recovery work without external
+authentication services; HTTP cannot create accounts; passwords and management
+tokens are stored only as hashes/digests. Test expiry, revocation, disabled users,
+role downgrades, password resets, target restrictions, and scope enforcement,
+including job moves and list/history reads. API tokens cannot mint tokens or
+alter upstream credential bindings. CSRF and SSRF tests pass, secret values never
+appear in API reads/logs, and output is safely rendered. Both a browser user and a
+scoped automation token can create jobs end to end.
 
 ### 5. Fly deployment and operational validation
 
@@ -467,6 +605,7 @@ useful decisions to settle before implementation:
    coalescing; no unbounded replay.
 4. Are HTTP jobs synchronous? Default: yes. Async work needs a defined status and
    cancellation contract before it can be tracked accurately.
-5. Which identity provider and initial workloads should drive the integration
-   tests? Obtain workload duration, output size, and duplicate-execution tolerance
-   before finalizing deployment sizing and retry defaults.
+5. Which initial workloads should drive the integration tests? Obtain workload
+   duration, output size, and duplicate-execution tolerance before finalizing
+   deployment sizing and retry defaults. Authentication uses local accounts
+   provisioned through the CLI, with separate scoped tokens for automation.
