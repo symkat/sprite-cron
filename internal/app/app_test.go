@@ -837,3 +837,67 @@ func TestShellValidation(t *testing.T) {
 		}
 	}
 }
+
+func TestTargetOptionalApplicationAuthentication(t *testing.T) {
+	s, v, _ := fixture(t)
+	remote := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		respond(w, 200, map[string]any{"id": "sprite-id", "name": "test-sprite", "url": "https://test.sprites.app", "url_settings": map[string]string{"auth": "public"}})
+	}))
+	defer remote.Close()
+	e := NewExecutor(s, v)
+	e.BaseURL, e.HTTP = remote.URL, remote.Client()
+	target := Target{ID: "test", Name: "test-sprite", CredentialID: "cred", Public: true}
+	if _, err := e.ValidateTarget(context.Background(), target); err != nil {
+		t.Fatal("public target without application authentication", err)
+	}
+	for _, header := range []string{"Authorization", "Cookie", "Host", "Fly-Test", "X-Forwarded-For", "Idempotency-Key", "X-Sprite-Cron-Run-ID", "Content-Length", "Transfer-Encoding", "Connection"} {
+		target.AppHeader, target.AppCredentialID = header, "cred"
+		if _, err := e.ValidateTarget(context.Background(), target); err != nil {
+			t.Errorf("header %q: %v", header, err)
+		}
+	}
+	for _, tc := range []struct{ header, credential string }{{"Bad Header", "cred"}, {"X-Test\r\nInjected", "cred"}, {"", "cred"}, {"X-Test", ""}} {
+		target.AppHeader, target.AppCredentialID = tc.header, tc.credential
+		if _, err := e.ValidateTarget(context.Background(), target); err == nil {
+			t.Errorf("accepted invalid header pair %q/%q", tc.header, tc.credential)
+		}
+	}
+}
+
+func TestApplicationHeaderDelivery(t *testing.T) {
+	s, v, j := fixture(t)
+	r := queued(t, s, j)
+	r.Snapshot.Job.Execution = Execution{Type: "http", Method: "GET", Path: "/ping"}
+	for _, header := range []string{"", "Authorization", "Cookie", "Host", "Fly-Test", "X-Forwarded-For", "Idempotency-Key", "X-Sprite-Cron-Run-ID"} {
+		t.Run(header, func(t *testing.T) {
+			remote := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+				if header == "" {
+					if req.Header.Get("Authorization") != "" {
+						t.Error("public ping sent Sprite credential")
+					}
+				} else {
+					got := req.Header.Get(header)
+					if header == "Host" {
+						got = req.Host
+					}
+					if got != "test-private-secret" {
+						t.Errorf("application header was not delivered: %q", header)
+					}
+				}
+				w.WriteHeader(http.StatusNoContent)
+			}))
+			defer remote.Close()
+			e := NewExecutor(s, v)
+			e.HTTP = remote.Client()
+			r.Snapshot.Target.URL = remote.URL
+			r.Snapshot.Target.Public = header != "Authorization"
+			r.Snapshot.Target.AppHeader, r.Snapshot.Target.AppCredentialID = header, ""
+			if header != "" {
+				r.Snapshot.Target.AppCredentialID = "cred"
+			}
+			if result := e.executeHTTP(context.Background(), r); result.Status != "succeeded" {
+				t.Fatal(result)
+			}
+		})
+	}
+}

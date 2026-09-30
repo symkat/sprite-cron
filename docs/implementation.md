@@ -26,6 +26,18 @@ Shell jobs execute a single script argument through `/bin/bash -lc` by default,
 with `/bin/sh -lc` also supported. They load login profiles and reuse the exec
 adapter for output, cancellation, and recovery. Scripts are expanded on the Sprite.
 
+Target application authentication is optional, including for public Sprite URLs.
+Application header names are checked for HTTP syntax only; there is no name
+blocklist. The application credential overrides a matching default request header,
+including Authorization and run identity headers. Overriding Authorization on an
+authenticated Sprite URL may prevent Sprite edge authentication. The HTTP transport
+and Sprite proxy still apply their own protocol handling. Job-level JSON headers
+retain their reserved-header restrictions; use a target credential for secrets.
+
+Credential edits in the browser keep the selected ID and kind fixed. Job edits
+use the existing job ID and revision, so changing the display name preserves the
+job and its history.
+
 ## Decisions made while building
 
 - **Direct exec adapter.** The SDK was investigated before implementation. Its

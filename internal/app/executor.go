@@ -115,11 +115,11 @@ func (e *Executor) ValidateTarget(ctx context.Context, t Target) (Target, error)
 	if t.Public != (info.Settings.Auth == "public") {
 		return t, errors.New("target public setting does not match Sprite URL authentication")
 	}
-	if t.Public && t.AppCredentialID == "" {
-		return t, errors.New("public targets require an application credential")
+	if (t.AppCredentialID == "") != (t.AppHeader == "") {
+		return t, errors.New("application header and credential must be provided together")
 	}
-	if t.AppCredentialID != "" && (!validHeader(t.AppHeader) || reservedHeader(strings.ToLower(t.AppHeader))) {
-		return t, errors.New("application credential requires a non-reserved HTTP header")
+	if t.AppCredentialID != "" && !validHeader(t.AppHeader) {
+		return t, errors.New("application credential requires a valid HTTP header name")
 	}
 	for _, id := range []string{t.HTTPCredentialID, t.AppCredentialID} {
 		if id != "" {
@@ -197,15 +197,18 @@ func (e *Executor) executeHTTP(ctx context.Context, r Run) Result {
 		}
 		req.Header.Set("Authorization", "Bearer "+secret)
 	}
+	req.Header.Set("Idempotency-Key", r.ID)
+	req.Header.Set("X-Sprite-Cron-Run-ID", r.ID)
 	if t.AppCredentialID != "" {
 		secret, err := e.secret(t.AppCredentialID)
 		if err != nil {
 			return Result{Status: "failed", Reason: "application credential unavailable"}
 		}
 		req.Header.Set(t.AppHeader, secret)
+		if strings.EqualFold(t.AppHeader, "Host") {
+			req.Host = secret
+		}
 	}
-	req.Header.Set("Idempotency-Key", r.ID)
-	req.Header.Set("X-Sprite-Cron-Run-ID", r.ID)
 	resp, err := e.HTTP.Do(req)
 	if err != nil {
 		return Result{Status: "unknown", Reason: "HTTP transport interrupted; request may have executed", Retryable: true}
