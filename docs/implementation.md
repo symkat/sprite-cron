@@ -1,6 +1,6 @@
 # Initial implementation — September 25, 2026
 
-The [README](../README.md) is the operating guide. The earlier [design](design.md)
+The [operations guide](https://sprite-cron.fly.dev/docs/operations/) covers running the service. The earlier [design](design.md)
 is retained as a planning record; its proposed capabilities should not be read
 as a list of completed features.
 
