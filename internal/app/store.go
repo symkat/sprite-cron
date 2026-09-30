@@ -129,7 +129,7 @@ func jobFrom(q querier, id string) (Job, error) {
 	return j, err
 }
 func (s *Store) Jobs() ([]Job, error) {
-	rows, err := s.DB.Query(`SELECT data FROM jobs ORDER BY id`)
+	rows, err := s.DB.Query(`SELECT data FROM jobs ORDER BY rowid DESC`)
 	if err != nil {
 		return nil, err
 	}

@@ -105,7 +105,12 @@ Credential listing remains browser-administrator-only; deleting/garbage-collecti
 those resources is deferred. Targets can be created and updated through the administrator
 API using browser sessions or scoped `targets:write` bearer tokens; the initial browser form registers new targets. Misfire and retention limits
 are fixed rather than dynamically configurable. Audit listing is limited to the
-most recent 200 events. Browser tables use manual refresh and offset pagination.
+most recent 200 events. Runs use offset pagination. The Jobs panel displays 25
+rows by default, optionally 50, in newest-created order with Previous/Next controls.
+Job pagination happens in the browser over the existing API array (at most 1,000
+jobs), preserving the REST response format and job names in run history.
+Forms and fields request autocomplete off, with password-manager ignore hints;
+browsers and extensions may override those preferences.
 
 The source research probe is stored as `docs/research/sprites_sdk_test.go.txt` so
 it remains reproducible evidence without becoming part of the service's Go test

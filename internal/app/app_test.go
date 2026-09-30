@@ -901,3 +901,34 @@ func TestApplicationHeaderDelivery(t *testing.T) {
 		})
 	}
 }
+
+func TestJobsNewestFirstAfterEdit(t *testing.T) {
+	s, _, oldest := fixture(t)
+	expected := []string{oldest.ID}
+	for i := 0; i < 5; i++ {
+		j, err := s.CreateJob(oldest, "test")
+		if err != nil {
+			t.Fatal(err)
+		}
+		expected = append(expected, j.ID)
+	}
+	oldest.Name = "Renamed oldest job"
+	if err := s.SaveJob(oldest, false, "test"); err != nil {
+		t.Fatal(err)
+	}
+	jobs, err := s.Jobs()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(jobs) != len(expected) {
+		t.Fatal("unexpected job count", len(jobs))
+	}
+	for i, j := range jobs {
+		if j.ID != expected[len(expected)-1-i] {
+			t.Fatal("jobs not in newest-created order")
+		}
+	}
+	if jobs[len(jobs)-1].Name != oldest.Name {
+		t.Fatal("edited job missing")
+	}
+}

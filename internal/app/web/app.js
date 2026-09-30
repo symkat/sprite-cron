@@ -1,5 +1,5 @@
 'use strict';
-let csrf = '', user = null, jobs = [], targets = [], runOffset = 0, editingCredentialID = null;
+let csrf = '', user = null, jobs = [], targets = [], runOffset = 0, editingCredentialID = null, jobPage = 0, jobPageSize = 25;
 const $ = s => document.querySelector(s);
 function node(tag, text, cls) { const n = document.createElement(tag); if (text !== undefined) n.textContent = text; if (cls) n.className = cls; return n; }
 function concealSecrets() {
@@ -64,12 +64,25 @@ function selectOptions(selector, items) { document.querySelectorAll(selector).fo
 async function loadTargets() { targets = await api('/targets'); selectOptions('.target-select', targets.map(t => ({id:t.id,label:`${t.id} · ${t.sprite_name}`}))); table('#target-list',['ID','Sprite','Organization','HTTP URL'],targets.map(t => [t.id,t.sprite_name,t.organization,t.url])); }
 async function loadCredentials(){ const items = await api('/credentials'); selectOptions('.credential-select', items.filter(c => c.kind === 'sprite')); selectOptions('.header-credential-select', [{id:'',label:'None'},...items.filter(c=>c.kind==='header').map(c=>({id:c.id,label:c.label+' · '+c.id}))]); applicationHeaderFields(); table('#credential-list',['ID','Label','Kind','Version','Actions'],items.map(c=>[c.id,c.label,c.kind,c.version,action('Edit',()=>editCredential(c))])); }
 async function loadJobs() {
-  jobs = await api('/jobs'); table('#job-list',['Job','Schedule','Target','Next run','State','Actions'], jobs.map(j => {
+  jobs = await api('/jobs'); renderJobs();
+}
+function renderJobs(){
+  jobPage=Math.min(jobPage,Math.max(0,Math.ceil(jobs.length/jobPageSize)-1));
+  const start=jobPage*jobPageSize;
+  $('#job-pagination').hidden=!jobs.length;
+  $('#job-page-status').textContent=`${start+1}–${Math.min(start+jobPageSize,jobs.length)} of ${jobs.length} jobs · newest first`;
+  $('#jobs-previous').disabled=jobPage===0;
+  $('#jobs-next').disabled=start+jobPageSize>=jobs.length;
+  table('#job-list',['Job','Schedule','Target','Next run','State','Actions'], jobs.slice(start,start+jobPageSize).map(j => {
     const actions = buttons(action('History', async()=>{showTab('runs');await loadRuns(j.id);}));
     if(user.role !== 'reader') actions.append(action('Edit', ()=>editJob(j)),action(j.enabled?'Pause':'Enable',async()=>{await api('/jobs/'+j.id,'PUT',{...j,enabled:!j.enabled});await loadJobs();}),action('Run now',async()=>{const r=await api('/jobs/'+j.id+'/runs','POST',undefined,{'Idempotency-Key':crypto.randomUUID()});notice('Queued run '+r.id);}),action('Delete',async()=>{if(!confirm('Delete this job and cancel its queued runs?')) return;await api('/jobs/'+j.id,'DELETE',undefined,{'If-Match':String(j.revision)});await loadJobs();}));
     return [j.name,j.schedule+' · '+j.timezone,j.target_id,j.enabled?time(j.next_run_at):'Paused',badge(j.enabled?'enabled':'paused'),actions];
   }));
 }
+function changeJobPage(delta){jobPage+=delta;renderJobs();$('#job-list').scrollIntoView({behavior:'smooth',block:'start'});}
+$('#jobs-previous').addEventListener('click',()=>changeJobPage(-1));
+$('#jobs-next').addEventListener('click',()=>changeJobPage(1));
+$('#job-page-size').addEventListener('change',()=>{jobPageSize=Number($('#job-page-size').value);jobPage=0;renderJobs();});
 function executionFields(){const http=$('#job-type').value==='http';$('#exec-fields').hidden=http;$('#http-fields').hidden=!http;$('#argv-field').hidden=$('#job-type').value==='shell';$('#script-field').hidden=$('#job-type').value!=='shell';}
 function editJob(j){ const f=$('#job-form');f.reset();const values={...j,...j.policy,...j.execution};for(const key of ['id','name','target_id','schedule','timezone','revision','type','script','shell','directory','method','path','body','timeout_seconds','start_grace_seconds','overlap','misfire','max_attempts']){if(values[key]!==undefined)f.elements.namedItem(key).value=values[key];}for(const key of ['argv','env','headers','success_statuses'])f.elements.namedItem(key).value=JSON.stringify(j.execution[key]??(key==='argv'||key==='success_statuses'?[]:{}));f.elements.enabled.checked=j.enabled;f.elements.retry_safe.checked=j.policy.retry_safe;jobEditorMode(j);$('#job-editor').open=true;executionFields();$('#job-editor').scrollIntoView({behavior:'smooth'}); }
 let runRows=[], runJobID;
@@ -84,7 +97,7 @@ document.querySelectorAll('nav button').forEach(b=>b.addEventListener('click',()
 $('#new-job').addEventListener('click',()=>{const f=$('#job-form');f.reset();f.elements.id.value='';f.elements.revision.value='';jobEditorMode();$('#job-editor').open=true;executionFields();$('#job-editor').scrollIntoView({behavior:'smooth'});});
 $('#job-type').addEventListener('change',executionFields);
 $('#preview').addEventListener('click',()=>perform(async()=>{$('#schedule-preview').textContent=(await api('/schedules/preview','POST',plain($('#job-form'),['schedule','timezone']))).join('\n');}));
-form('#job-form',async f=>{const j=plain(f,['name','target_id','schedule','timezone']);j.enabled=checked(f,'enabled');j.policy={...plain(f,['overlap','misfire']),retry_safe:checked(f,'retry_safe')};for(const k of ['timeout_seconds','start_grace_seconds','max_attempts'])j.policy[k]=Number(value(f,k));const type=value(f,'type');j.execution=type!=='http'?{type,...(type==='shell'?{script:value(f,'script'),shell:value(f,'shell')}:{argv:jsonField(f,'argv')}),directory:value(f,'directory'),env:jsonField(f,'env')}:{type,...plain(f,['method','path','body']),headers:jsonField(f,'headers'),success_statuses:jsonField(f,'success_statuses')};const id=value(f,'id');if(id)j.revision=Number(value(f,'revision'));await api('/jobs'+(id?'/'+id:''),id?'PUT':'POST',j);$('#job-editor').open=false;await loadJobs();notice('Job saved.');});
+form('#job-form',async f=>{const j=plain(f,['name','target_id','schedule','timezone']);j.enabled=checked(f,'enabled');j.policy={...plain(f,['overlap','misfire']),retry_safe:checked(f,'retry_safe')};for(const k of ['timeout_seconds','start_grace_seconds','max_attempts'])j.policy[k]=Number(value(f,k));const type=value(f,'type');j.execution=type!=='http'?{type,...(type==='shell'?{script:value(f,'script'),shell:value(f,'shell')}:{argv:jsonField(f,'argv')}),directory:value(f,'directory'),env:jsonField(f,'env')}:{type,...plain(f,['method','path','body']),headers:jsonField(f,'headers'),success_statuses:jsonField(f,'success_statuses')};const id=value(f,'id');if(id)j.revision=Number(value(f,'revision'));await api('/jobs'+(id?'/'+id:''),id?'PUT':'POST',j);$('#job-editor').open=false;if(!id)jobPage=0;await loadJobs();notice('Job saved.');});
 function editCredential(c){
   resetCredentialEditor();editingCredentialID=c.id;
   const f=$('#credential-form');for(const key of ['id','label','kind'])f.elements.namedItem(key).value=c[key];
