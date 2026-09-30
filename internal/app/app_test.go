@@ -932,3 +932,80 @@ func TestJobsNewestFirstAfterEdit(t *testing.T) {
 		t.Fatal("edited job missing")
 	}
 }
+
+func TestRunsPaginationFiltersBeforePaging(t *testing.T) {
+	s, _, j := fixture(t)
+	other, err := s.CreateJob(j, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 51; i++ {
+		queued(t, s, j)
+	}
+	for i := 0; i < 10; i++ {
+		queued(t, s, other)
+	}
+	for i := 0; i < 105; i++ {
+		r := queued(t, s, other)
+		mustExec(t, s, `UPDATE runs SET target_id='outside',created=created+100000 WHERE id=?`, r.ID)
+	}
+	mustExec(t, s, `UPDATE runs SET stdout='output must stay in details',stderr='details only'`)
+	a := &App{Store: s}
+	p := Principal{User: User{Role: "reader"}, TokenID: "test-token", Scopes: []string{"runs:read"}, Targets: []string{"test"}}
+	type page struct {
+		Runs  []Run `json:"runs"`
+		Total int   `json:"total"`
+		Next  int   `json:"next_offset"`
+		More  bool  `json:"has_more"`
+	}
+	call := func(query string, principal Principal) page {
+		t.Helper()
+		w := httptest.NewRecorder()
+		if err := a.runsList(w, httptest.NewRequest("GET", "/api/runs"+query, nil), principal); err != nil {
+			t.Fatal(err)
+		}
+		var result page
+		if err := json.Unmarshal(w.Body.Bytes(), &result); err != nil {
+			t.Fatal(err)
+		}
+		for _, r := range result.Runs {
+			if r.Stdout != "" || r.Stderr != "" {
+				t.Fatal("list exposed output")
+			}
+		}
+		return result
+	}
+	first := call("?limit=25&job_id="+j.ID, p)
+	second := call("?limit=25&offset=25&job_id="+j.ID, p)
+	last := call("?limit=25&offset=50&job_id="+j.ID, p)
+	if len(first.Runs) != 25 || first.Total != 51 || !first.More || first.Next != 25 || len(second.Runs) != 25 || len(last.Runs) != 1 || last.More {
+		t.Fatal("incorrect filtered pages", first.Total, second.Total, last.Total)
+	}
+	seen := map[string]bool{}
+	for _, r := range append(append(first.Runs, second.Runs...), last.Runs...) {
+		if seen[r.ID] || r.JobID != j.ID {
+			t.Fatal("duplicate or unrelated run")
+		}
+		seen[r.ID] = true
+	}
+	scoped := call("?limit=50", p)
+	if scoped.Total != 61 || len(scoped.Runs) != 50 {
+		t.Fatal("target authorization applied after limit")
+	}
+	p.Targets = []string{}
+	if empty := call("?limit=25", p); empty.Total != 0 || len(empty.Runs) != 0 || empty.More {
+		t.Fatal("empty allowlist exposed runs")
+	}
+	p.Targets = []string{"*"}
+	if all := call("", p); all.Total != 166 || len(all.Runs) != 100 {
+		t.Fatal("default limit or wildcard broken")
+	}
+	if empty := call("?limit=25&job_id=missing", p); empty.Total != 0 || len(empty.Runs) != 0 {
+		t.Fatal("missing job exposed runs")
+	}
+	for _, limit := range []string{"0", "101", "bad"} {
+		if err := a.runsList(httptest.NewRecorder(), httptest.NewRequest("GET", "/api/runs?limit="+limit, nil), p); err == nil {
+			t.Fatal("invalid limit accepted")
+		}
+	}
+}

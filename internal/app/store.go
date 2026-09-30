@@ -266,6 +266,42 @@ func (s *Store) Runs(limit, offset int) ([]Run, error) {
 	}
 	return out, rows.Err()
 }
+
+// RunsPage applies authorization and job filters before counting and paginating.
+func (s *Store) RunsPage(limit, offset int, jobID string, allTargets bool, targets []string) ([]Run, int, error) {
+	tx, err := s.DB.BeginTx(context.Background(), &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return nil, 0, err
+	}
+	defer tx.Rollback()
+	const where = ` WHERE (?='' OR job_id=?) AND (? OR target_id IN (SELECT value FROM json_each(?)))`
+	args := []any{jobID, jobID, allTargets, encoded(targets)}
+	var total int
+	if err = tx.QueryRow(`SELECT count(*) FROM runs`+where, args...).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+	rows, err := tx.Query(`SELECT `+runColumns+` FROM runs`+where+` ORDER BY created DESC,id LIMIT ? OFFSET ?`, append(args, limit, offset)...)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+	out := []Run{}
+	for rows.Next() {
+		run, err := scanRun(rows)
+		if err != nil {
+			return nil, 0, err
+		}
+		out = append(out, run)
+	}
+	if err = rows.Err(); err != nil {
+		return nil, 0, err
+	}
+	if err = rows.Close(); err != nil {
+		return nil, 0, err
+	}
+	return out, total, tx.Commit()
+}
+
 func insertRun(q querier, j Job, t Target, at, created int64, manual bool, key, status, reason string) (string, error) {
 	id := randomID()
 	_, err := q.Exec(`INSERT INTO runs(id,job_id,target_id,revision,scheduled,created,status,start_before,manual,reason,snapshot,request_key) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`, id, j.ID, j.TargetID, j.Revision, at, created, status, created+int64(j.Policy.StartGraceSeconds)*1000, manual, reason, encoded(Snapshot{j, t}), key)

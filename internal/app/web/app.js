@@ -1,5 +1,5 @@
 'use strict';
-let csrf = '', user = null, jobs = [], targets = [], runOffset = 0, editingCredentialID = null, jobPage = 0, jobPageSize = 25;
+let csrf = '', user = null, jobs = [], targets = [], credentials = [], editingCredentialID = null, jobPage = 0, jobPageSize = 25;
 const $ = s => document.querySelector(s);
 function node(tag, text, cls) { const n = document.createElement(tag); if (text !== undefined) n.textContent = text; if (cls) n.className = cls; return n; }
 function concealSecrets() {
@@ -61,8 +61,38 @@ function jsonField(f,key){ try { return JSON.parse(value(f,key)); } catch { thro
 function plain(f, keys) { return Object.fromEntries(keys.map(k => [k, value(f,k)])); }
 function checked(f,k) { return f.elements.namedItem(k).checked; }
 function selectOptions(selector, items) { document.querySelectorAll(selector).forEach(select => { const previous = select.value; select.replaceChildren(); for (const item of items) { const option = node('option', item.label); option.value = item.id; select.append(option); } if (items.some(x => x.id === previous)) select.value = previous; }); }
-async function loadTargets() { targets = await api('/targets'); selectOptions('.target-select', targets.map(t => ({id:t.id,label:`${t.id} · ${t.sprite_name}`}))); table('#target-list',['ID','Sprite','Organization','HTTP URL'],targets.map(t => [t.id,t.sprite_name,t.organization,t.url])); }
-async function loadCredentials(){ const items = await api('/credentials'); selectOptions('.credential-select', items.filter(c => c.kind === 'sprite')); selectOptions('.header-credential-select', [{id:'',label:'None'},...items.filter(c=>c.kind==='header').map(c=>({id:c.id,label:c.label+' · '+c.id}))]); applicationHeaderFields(); table('#credential-list',['ID','Label','Kind','Version','Actions'],items.map(c=>[c.id,c.label,c.kind,c.version,action('Edit',()=>editCredential(c))])); }
+const listPages={target:{page:0,size:25},credential:{page:0,size:25},run:{page:0,size:25}};
+function updatePager(key,total){
+  const state=listPages[key],start=state.page*state.size;
+  $('#'+key+'-pagination').hidden=total===0;
+  $('#'+key+'-page-status').textContent=`${start+1}–${Math.min(start+state.size,total)} of ${total} ${key==='run'?'runs':key==='target'?'targets':'credentials'}`;
+  $('#'+key+'-previous').disabled=state.page===0;
+  $('#'+key+'-next').disabled=start+state.size>=total;
+}
+function pageItems(key,items){
+  const state=listPages[key];state.page=Math.min(state.page,Math.max(0,Math.ceil(items.length/state.size)-1));
+  updatePager(key,items.length);return items.slice(state.page*state.size,(state.page+1)*state.size);
+}
+function renderTargets(){table('#target-list',['ID','Sprite','Organization','HTTP URL'],pageItems('target',targets).map(t=>[t.id,t.sprite_name,t.organization,t.url]));}
+function renderCredentials(){table('#credential-list',['ID','Label','Kind','Version','Actions'],pageItems('credential',credentials).map(c=>[c.id,c.label,c.kind,c.version,action('Edit',()=>editCredential(c))]));}
+async function loadTargets(){
+  targets=await api('/targets');selectOptions('.target-select',targets.map(t=>({id:t.id,label:`${t.id} · ${t.sprite_name}`})));renderTargets();
+}
+async function loadCredentials(){
+  credentials=await api('/credentials');selectOptions('.credential-select',credentials.filter(c=>c.kind==='sprite'));
+  selectOptions('.header-credential-select',[{id:'',label:'None'},...credentials.filter(c=>c.kind==='header').map(c=>({id:c.id,label:c.label+' · '+c.id}))]);
+  applicationHeaderFields();renderCredentials();
+}
+for(const key of ['target','credential','run']){
+  const render=key==='target'?renderTargets:renderCredentials;
+  async function navigate(page){
+    if(key==='run')await loadRuns(runJobID,page);else{listPages[key].page=page;render();}
+    $('#'+key+'-list').scrollIntoView({behavior:'smooth',block:'start'});
+  }
+  $('#'+key+'-previous').addEventListener('click',()=>perform(()=>navigate(Math.max(0,listPages[key].page-1))));
+  $('#'+key+'-next').addEventListener('click',()=>perform(()=>navigate(listPages[key].page+1)));
+  $('#'+key+'-page-size').addEventListener('change',()=>perform(async()=>{listPages[key].size=Number($('#'+key+'-page-size').value);await navigate(0);}));
+}
 async function loadJobs() {
   jobs = await api('/jobs'); renderJobs();
 }
@@ -74,7 +104,7 @@ function renderJobs(){
   $('#jobs-previous').disabled=jobPage===0;
   $('#jobs-next').disabled=start+jobPageSize>=jobs.length;
   table('#job-list',['Job','Schedule','Target','Next run','State','Actions'], jobs.slice(start,start+jobPageSize).map(j => {
-    const actions = buttons(action('History', async()=>{showTab('runs');await loadRuns(j.id);}));
+    const actions = buttons(action('History', async()=>{showTab('runs');await loadRuns(j.id,0);}));
     if(user.role !== 'reader') actions.append(action('Edit', ()=>editJob(j)),action(j.enabled?'Pause':'Enable',async()=>{await api('/jobs/'+j.id,'PUT',{...j,enabled:!j.enabled});await loadJobs();}),action('Run now',async()=>{const r=await api('/jobs/'+j.id+'/runs','POST',undefined,{'Idempotency-Key':crypto.randomUUID()});notice('Queued run '+r.id);}),action('Delete',async()=>{if(!confirm('Delete this job and cancel its queued runs?')) return;await api('/jobs/'+j.id,'DELETE',undefined,{'If-Match':String(j.revision)});await loadJobs();}));
     return [j.name,j.schedule+' · '+j.timezone,j.target_id,j.enabled?time(j.next_run_at):'Paused',badge(j.enabled?'enabled':'paused'),actions];
   }));
@@ -85,15 +115,24 @@ $('#jobs-next').addEventListener('click',()=>changeJobPage(1));
 $('#job-page-size').addEventListener('change',()=>{jobPageSize=Number($('#job-page-size').value);jobPage=0;renderJobs();});
 function executionFields(){const http=$('#job-type').value==='http';$('#exec-fields').hidden=http;$('#http-fields').hidden=!http;$('#argv-field').hidden=$('#job-type').value==='shell';$('#script-field').hidden=$('#job-type').value!=='shell';}
 function editJob(j){ const f=$('#job-form');f.reset();const values={...j,...j.policy,...j.execution};for(const key of ['id','name','target_id','schedule','timezone','revision','type','script','shell','directory','method','path','body','timeout_seconds','start_grace_seconds','overlap','misfire','max_attempts']){if(values[key]!==undefined)f.elements.namedItem(key).value=values[key];}for(const key of ['argv','env','headers','success_statuses'])f.elements.namedItem(key).value=JSON.stringify(j.execution[key]??(key==='argv'||key==='success_statuses'?[]:{}));f.elements.enabled.checked=j.enabled;f.elements.retry_safe.checked=j.policy.retry_safe;jobEditorMode(j);$('#job-editor').open=true;executionFields();$('#job-editor').scrollIntoView({behavior:'smooth'}); }
-let runRows=[], runJobID;
-async function loadRuns(jobID,more=false){if(!more){runOffset=0;runRows=[];runJobID=jobID;$('#run-detail').hidden=true;}jobID=runJobID;const result=await api('/runs?offset='+runOffset+(jobID?'&job_id='+encodeURIComponent(jobID):''));runOffset=result.next_offset;runRows.push(...result.runs);$('#more-runs').hidden=!result.has_more;table('#run-list',['Run / job','Scheduled','Outcome','Attempt','Actions'],runRows.map(r=>{const actions=buttons(action('Details',async()=>{const data=await api('/runs/'+r.id);$('#run-detail').hidden=false;$('#run-detail pre').textContent=JSON.stringify(data,null,2);$('#run-detail h2').textContent='Run '+r.id;$('#run-detail h2').focus({preventScroll:true});$('#run-detail').scrollIntoView({behavior:'smooth',block:'start'});}));if(user.role!=='reader'){if(['queued','dispatching','running','retry_wait','unknown'].includes(r.status))actions.append(action('Cancel',async()=>{await api('/runs/'+r.id+'/cancel','POST',{});await loadRuns();}));if(r.status==='unknown'&&!r.resolved)actions.append(action('Resolve',async()=>{const note=prompt('Confirm you investigated this run. Explain why releasing its overlap block is safe (remote work may still be running):');if(!note)return;await api('/runs/'+r.id+'/resolve','POST',{accept_risk:true,note});await loadRuns();}));if(['failed','timed_out','cancelled'].includes(r.status)||r.status==='unknown'&&r.resolved)actions.append(action('Retry',async()=>{if(!confirm('Retry the same run ID? The saved job must be declared safe to repeat.'))return;await api('/runs/'+r.id+'/retry','POST',{});await loadRuns();}));}return[r.id.slice(0,8)+' / '+(jobs.find(j=>j.id===r.job_id)?.name||r.job_id),time(r.scheduled_at),badge(r.status+(r.resolved?' (resolved)':'')),r.attempt,actions];}));}
+let runJobID=null, runRequest=0;
+async function loadRuns(jobID=runJobID,page=listPages.run.page){
+  const request=++runRequest,size=listPages.run.size;
+  const result=await api('/runs?offset='+page*size+'&limit='+size+(jobID?'&job_id='+encodeURIComponent(jobID):''));
+  if(request!==runRequest)return;
+  const lastPage=Math.max(0,Math.ceil(result.total/size)-1);
+  if(page>lastPage)return loadRuns(jobID,lastPage);
+  runJobID=jobID;listPages.run.page=page;$('#run-detail').hidden=true;
+  updatePager('run',result.total);renderRuns(result.runs);
+}
+function renderRuns(rows){table('#run-list',['Run / job','Scheduled','Outcome','Attempt','Actions'],rows.map(r=>{const actions=buttons(action('Details',async()=>{const data=await api('/runs/'+r.id);$('#run-detail').hidden=false;$('#run-detail pre').textContent=JSON.stringify(data,null,2);$('#run-detail h2').textContent='Run '+r.id;$('#run-detail h2').focus({preventScroll:true});$('#run-detail').scrollIntoView({behavior:'smooth',block:'start'});}));if(user.role!=='reader'){if(['queued','dispatching','running','retry_wait','unknown'].includes(r.status))actions.append(action('Cancel',async()=>{await api('/runs/'+r.id+'/cancel','POST',{});await loadRuns();}));if(r.status==='unknown'&&!r.resolved)actions.append(action('Resolve',async()=>{const note=prompt('Confirm you investigated this run. Explain why releasing its overlap block is safe (remote work may still be running):');if(!note)return;await api('/runs/'+r.id+'/resolve','POST',{accept_risk:true,note});await loadRuns();}));if(['failed','timed_out','cancelled'].includes(r.status)||r.status==='unknown'&&r.resolved)actions.append(action('Retry',async()=>{if(!confirm('Retry the same run ID? The saved job must be declared safe to repeat.'))return;await api('/runs/'+r.id+'/retry','POST',{});await loadRuns();}));}return[r.id.slice(0,8)+' / '+(jobs.find(j=>j.id===r.job_id)?.name||r.job_id),time(r.scheduled_at),badge(r.status+(r.resolved?' (resolved)':'')),r.attempt,actions];}));}
 async function loadTokens(){const tokens=await api('/tokens');table('#token-list',['Name','Scopes','Targets','Expires','Last used','Actions'],tokens.map(t=>[t.name,t.scopes.join(', '),t.targets.join(', '),time(t.expires_at),time(t.last_used_at),t.revoked?'Revoked':action('Revoke',async()=>{await api('/tokens/'+t.id,'DELETE');await loadTokens();})]));}
 async function loadAudit(){const [events,status]=await Promise.all([api('/audit'),api('/status')]);$('#system-status').textContent=JSON.stringify(status,null,2);table('#audit-list',['When','Who','Action','Object','Detail'],events.map(e=>[time(e.at),e.actor,e.action,e.object,e.detail]));}
 function showTab(id){concealSecrets();document.querySelectorAll('.tab').forEach(x=>x.hidden=x.id!==id);document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('active',b.dataset.tab===id));$('#new-token').textContent='';$('#new-token').hidden=true;}
 async function boot(){try {const me=await api('/me');user=me.user;csrf=me.csrf;}catch{$('#login').hidden=false;return;}$('#login').hidden=true;$('#workspace').hidden=false;$('#logout').hidden=false;$('#identity').textContent=user.username+' · '+user.role;document.querySelectorAll('.admin').forEach(e=>e.hidden=user.role!=='admin');document.querySelectorAll('.write').forEach(e=>e.hidden=user.role==='reader');await loadTargets();if(user.role==='admin')await loadCredentials();await loadJobs();}
 form('#login-form',async f=>{const result=await api('/login','POST',plain(f,['username','password']));csrf=result.csrf;f.reset();await boot();});
 $('#logout').addEventListener('click',()=>perform(async()=>{await api('/logout','POST',{});location.reload();}));
-document.querySelectorAll('nav button').forEach(b=>b.addEventListener('click',()=>perform(async()=>{showTab(b.dataset.tab);switch(b.dataset.tab){case'jobs':await loadJobs();break;case'runs':await loadRuns();break;case'targets':await loadTargets();break;case'credentials':await loadCredentials();break;case'account':await loadTokens();break;case'audit':await loadAudit();break;}})));
+document.querySelectorAll('nav button').forEach(b=>b.addEventListener('click',()=>perform(async()=>{showTab(b.dataset.tab);switch(b.dataset.tab){case'jobs':await loadJobs();break;case'runs':await loadRuns(null,0);break;case'targets':await loadTargets();break;case'credentials':await loadCredentials();break;case'account':await loadTokens();break;case'audit':await loadAudit();break;}})));
 $('#new-job').addEventListener('click',()=>{const f=$('#job-form');f.reset();f.elements.id.value='';f.elements.revision.value='';jobEditorMode();$('#job-editor').open=true;executionFields();$('#job-editor').scrollIntoView({behavior:'smooth'});});
 $('#job-type').addEventListener('change',executionFields);
 $('#preview').addEventListener('click',()=>perform(async()=>{$('#schedule-preview').textContent=(await api('/schedules/preview','POST',plain($('#job-form'),['schedule','timezone']))).join('\n');}));
@@ -120,7 +159,7 @@ $('#target-form input[name=public]').addEventListener('change',applicationHeader
 form('#target-form',async f=>{await api('/targets','POST',{...plain(f,['id','sprite_name','credential_id','app_credential_id','app_header']),public:checked(f,'public')});f.reset();applicationHeaderFields();await loadTargets();notice('Target verified and registered.');});
 form('#token-form',async f=>{const data={...plain(f,['name','password']),scopes:value(f,'scopes').split(',').map(x=>x.trim()),targets:value(f,'targets').split(',').map(x=>x.trim()),expires_hours:Number(value(f,'expires_hours'))};const result=await api('/tokens','POST',data);f.elements.password.value='';concealSecrets();$('#new-token').hidden=false;$('#new-token').textContent='Copy this token now. It will not be shown again.\n\n'+result.token;await loadTokens();});
 form('#password-form',async f=>{await api('/password','POST',plain(f,['current','new']));location.reload();});
-$('#refresh-runs').addEventListener('click',()=>perform(()=>loadRuns()));$('#more-runs').addEventListener('click',()=>perform(()=>loadRuns(undefined,true)));
+$('#refresh-runs').addEventListener('click',()=>perform(()=>loadRuns(runJobID,0)));
 setupJobHelp();
 setupSecretToggles();
 perform(boot);

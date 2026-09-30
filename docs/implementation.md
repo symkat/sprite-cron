@@ -105,10 +105,19 @@ Credential listing remains browser-administrator-only; deleting/garbage-collecti
 those resources is deferred. Targets can be created and updated through the administrator
 API using browser sessions or scoped `targets:write` bearer tokens; the initial browser form registers new targets. Misfire and retention limits
 are fixed rather than dynamically configurable. Audit listing is limited to the
-most recent 200 events. Runs use offset pagination. The Jobs panel displays 25
-rows by default, optionally 50, in newest-created order with Previous/Next controls.
-Job pagination happens in the browser over the existing API array (at most 1,000
-jobs), preserving the REST response format and job names in run history.
+most recent 200 events. Jobs, Runs, Targets, and Credentials display 25 rows by
+default, optionally 50, with Previous/Next controls and row counts. Jobs use
+newest-created order; runs use newest-first history; targets and credentials use
+ID order. Job, target, and credential pagination happens in the browser over the
+existing API arrays. Dropdowns continue to include all targets and credentials.
+
+Runs fetch only the requested page. `GET /api/runs` accepts `limit` (1–100;
+default 100), `offset`, and optional `job_id`. It returns `runs`, `total`,
+`next_offset`, and `has_more`. Authorization and job filters apply before the
+count and offset, so totals include only matching, accessible runs. Job-specific
+history retains its filter across page changes, refreshes, and run actions.
+Offsets refer to the current history; new runs or retention cleanup can shift
+page boundaries between requests.
 Forms and fields request autocomplete off, with password-manager ignore hints;
 browsers and extensions may override those preferences.
 

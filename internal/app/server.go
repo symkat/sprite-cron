@@ -596,19 +596,23 @@ func (a *App) runsList(w http.ResponseWriter, r *http.Request, p Principal) erro
 	if offset < 0 {
 		offset = 0
 	}
-	runs, err := a.Store.Runs(100, offset)
+	limit := 100
+	if raw := r.URL.Query().Get("limit"); raw != "" {
+		var err error
+		limit, err = strconv.Atoi(raw)
+		if err != nil || limit < 1 || limit > 100 {
+			return apiError{400, "limit must be between 1 and 100"}
+		}
+	}
+	runs, total, err := a.Store.RunsPage(limit, offset, r.URL.Query().Get("job_id"), p.Allows("runs:read", "*"), p.Targets)
 	if err != nil {
 		return err
 	}
-	out := []Run{}
-	for _, run := range runs {
-		if p.Allows("runs:read", run.TargetID) && (r.URL.Query().Get("job_id") == "" || r.URL.Query().Get("job_id") == run.JobID) {
-			run.Stdout = ""
-			run.Stderr = ""
-			out = append(out, run)
-		}
+	for i := range runs {
+		runs[i].Stdout = ""
+		runs[i].Stderr = ""
 	}
-	respond(w, 200, map[string]any{"runs": out, "next_offset": offset + len(runs), "has_more": len(runs) == 100})
+	respond(w, 200, map[string]any{"runs": runs, "total": total, "next_offset": offset + len(runs), "has_more": offset+len(runs) < total})
 	return nil
 }
 func (a *App) runGet(w http.ResponseWriter, r *http.Request, p Principal) error {
