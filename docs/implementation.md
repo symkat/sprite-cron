@@ -118,8 +118,10 @@ count and offset, so totals include only matching, accessible runs. Job-specific
 history retains its filter across page changes, refreshes, and run actions.
 Offsets refer to the current history; new runs or retention cleanup can shift
 page boundaries between requests.
-Forms and fields request autocomplete off, with password-manager ignore hints;
-browsers and extensions may override those preferences.
+Configuration forms and fields request autocomplete off, with password-manager
+ignore hints; browsers and extensions may override those preferences. Sign-in is
+an exception: username and current-password autocomplete remain enabled, with no
+password-manager ignore hints, to support tools such as 1Password.
 
 The source research probe is stored as `docs/research/sprites_sdk_test.go.txt` so
 it remains reproducible evidence without becoming part of the service's Go test
