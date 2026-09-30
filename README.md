@@ -66,5 +66,3 @@ For local setup, prerequisites, and the development workflow, see [Local develop
 make build   # Build bin/sprite-cron
 make check   # Check formatting, run go vet and race-enabled tests
 ```
-
-The [implementation notes](docs/implementation.md), [original design](docs/design.md), and [Sprite SDK research](docs/sprites-go-sdk-research.md) explain the engineering decisions behind the service.
