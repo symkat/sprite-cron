@@ -142,14 +142,21 @@ function setupJobHelp(){
     retry_safe:'Confirm that repeating work with the same run ID will not cause unwanted duplicate effects. Required for retries.',
     enabled:'Enable future scheduled runs. A paused job can still be run manually.'
   };
+  const hints=[];
   for(const [name,text] of Object.entries(help)){
     const input=$('#job-form').elements.namedItem(name),label=input.closest('label');
-    const wrap=node('span',undefined,'field-help'),button=node('button','?','help-toggle'),tip=node('span',text,'help-tooltip');
-    button.type='button';button.setAttribute('aria-label','Help for '+label.textContent.trim());
-    tip.id='help-'+name;tip.setAttribute('role','tooltip');button.setAttribute('aria-describedby',tip.id);input.setAttribute('aria-describedby',tip.id);
-    button.addEventListener('click',()=>{const open=wrap.classList.toggle('is-open');button.setAttribute('aria-expanded',String(open));});
-    button.setAttribute('aria-expanded','false');button.addEventListener('blur',()=>{wrap.classList.remove('is-open');button.setAttribute('aria-expanded','false');});
-    button.addEventListener('keydown',e=>{if(e.key==='Escape'){wrap.classList.remove('is-open');button.blur();}});
-    wrap.append(button,tip);label.after(wrap);const field=node('div',undefined,'job-field');label.before(field);field.append(label,wrap);if(label.id){field.id=label.id;label.removeAttribute('id');}
+    const hint=node('p',text,'field-hint'),field=node('div',undefined,'job-field');
+    hint.id='help-'+name;hint.hidden=true;input.setAttribute('aria-describedby',hint.id);
+    label.before(field);field.append(label,hint);
+    if(label.id){field.id=label.id;label.removeAttribute('id');}
+    hints.push(hint);
   }
+  const toggle=$('#toggle-job-help');
+  toggle.setAttribute('aria-controls',hints.map(hint=>hint.id).join(' '));
+  toggle.addEventListener('click',()=>{
+    const show=toggle.getAttribute('aria-expanded')!=='true';
+    toggle.setAttribute('aria-expanded',String(show));
+    toggle.textContent=show?'Hide field help':'Show field help';
+    hints.forEach(hint=>hint.hidden=!show);
+  });
 }
